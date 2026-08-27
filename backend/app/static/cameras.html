@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>NiifYéén — Caméras</title>
+  <style>
+    :root{
+      --bg:#f6f8fc; --panel:#fff; --border:rgba(16,24,40,.10);
+      --text:rgba(16,24,40,.92); --muted:rgba(16,24,40,.62);
+      --accent:#2f6df6; --ok:#12b76a; --danger:#f04438;
+      --shadow:0 14px 50px rgba(16,24,40,.10);
+      --radius:14px; --mono:ui-monospace,Menlo,Consolas,monospace; --sans:system-ui,Segoe UI,Roboto,Arial;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:var(--sans);color:var(--text);
+      background:radial-gradient(1200px 700px at 20% 10%, rgba(47,109,246,.10), transparent 60%),
+                 radial-gradient(900px 600px at 90% 20%, rgba(18,183,106,.10), transparent 60%),
+                 var(--bg);}
+    .container{max-width:1200px;margin:0 auto;padding:20px}
+    header{display:flex;justify-content:space-between;gap:14px;align-items:center;
+      padding:14px 16px;border:1px solid var(--border);background:rgba(255,255,255,.92);
+      border-radius:var(--radius);box-shadow:var(--shadow);position:sticky;top:12px;z-index:10;backdrop-filter:blur(10px)}
+    .brand{display:flex;gap:12px;align-items:center}
+    .logo{width:40px;height:40px;border-radius:12px;background:conic-gradient(from 210deg, var(--accent), var(--ok), #7a5af8, var(--accent));
+      box-shadow:0 12px 30px rgba(47,109,246,.20);border:1px solid rgba(16,24,40,.08)}
+    h1{margin:0;font-size:16px;font-weight:900}
+    .subtitle{margin-top:2px;font-size:12px;color:var(--muted)}
+    .pill{display:inline-flex;gap:8px;align-items:center;padding:7px 10px;border-radius:999px;border:1px solid rgba(16,24,40,.12);
+      background:rgba(16,24,40,.03);color:rgba(16,24,40,.72);font-size:12px;white-space:nowrap}
+    .dot{width:10px;height:10px;border-radius:50%;background:rgba(16,24,40,.18);box-shadow:0 0 0 6px rgba(16,24,40,.06)}
+    .dot.ok{background:var(--ok);box-shadow:0 0 0 6px rgba(18,183,106,.14)}
+    .dot.bad{background:var(--danger);box-shadow:0 0 0 6px rgba(240,68,56,.14)}
+    a{color:inherit;text-decoration:none}
+    .btnlink{border:1px solid rgba(16,24,40,.14);background:rgba(16,24,40,.03);padding:9px 12px;border-radius:12px;font-weight:900;font-size:13px}
+    .grid{display:grid;grid-template-columns: 1.2fr 0.8fr; gap:16px; margin-top:16px}
+    @media (max-width:980px){.grid{grid-template-columns:1fr}header{position:static}}
+    .card{border:1px solid var(--border);background:var(--panel);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+    .card-header{padding:14px 16px;border-bottom:1px solid var(--border);background:linear-gradient(180deg, rgba(47,109,246,.06), rgba(255,255,255,0))}
+    .card-title{margin:0;font-size:14px;font-weight:900}
+    .card-desc{margin-top:4px;color:var(--muted);font-size:12px;line-height:1.35}
+    .card-body{padding:16px}
+    .videoGrid{display:grid;grid-template-columns:1fr 1fr; gap:12px}
+    @media (max-width:980px){.videoGrid{grid-template-columns:1fr}}
+    .video-wrap{border-radius:var(--radius);overflow:hidden;border:1px solid rgba(16,24,40,.12);background:rgba(16,24,40,.03);position:relative}
+    .video-wrap img{width:100%;display:block}
+    .video-badge{position:absolute;left:12px;top:12px;display:flex;gap:8px;align-items:center;
+      padding:8px 10px;border-radius:999px;background:rgba(255,255,255,.88);border:1px solid rgba(16,24,40,.10);font-size:12px;color:rgba(16,24,40,.75)}
+    .table{width:100%;border-collapse:collapse;font-size:12px;border-radius:12px;overflow:hidden;border:1px solid rgba(16,24,40,.10)}
+    .table th,.table td{padding:10px 10px;border-bottom:1px solid rgba(16,24,40,.08);text-align:left;vertical-align:top}
+    .table th{background:rgba(47,109,246,.06);color:rgba(16,24,40,.68);font-weight:900}
+    .table tr:last-child td{border-bottom:none}
+    .mono{font-family:var(--mono);font-size:12px;color:rgba(16,24,40,.78)}
+    canvas{width:100%;height:240px;display:block;border-radius:12px;border:1px solid rgba(16,24,40,.12);background:rgba(47,109,246,.03)}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="brand">
+        <div class="logo"></div>
+        <div>
+          <h1>NiifYéén — Caméras</h1>
+          <div class="subtitle">Page dédiée aux flux vidéo + événements temps réel</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:flex-end">
+        <span class="pill"><span id="wsDot" class="dot"></span><span id="wsText">WS: déconnecté</span></span>
+        <a class="btnlink" href="/">Retour</a>
+      </div>
+    </header>
+
+    <div class="grid">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Flux caméras</div>
+          <div class="card-desc">Les flux sont servis en MJPEG sur <span class="mono">/video/{cam_id}</span>.</div>
+        </div>
+        <div class="card-body">
+          <div id="videos" class="videoGrid"></div>
+
+          <div style="height:12px"></div>
+
+          <div class="card-title" style="font-size:13px;">Plan 2D (simple)</div>
+          <div class="card-desc">Rouge = TARGET, Vert = DB, Gris = UNK.</div>
+          <div style="height:10px"></div>
+          <canvas id="map"></canvas>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Événements live</div>
+          <div class="card-desc">Tracks détectés et leur statut.</div>
+        </div>
+        <div class="card-body">
+          <table class="table" id="eventsTable">
+            <thead>
+              <tr>
+                <th>cam</th><th>track</th><th>mode</th><th>label</th><th>score cible</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <div style="margin-top:10px;color:rgba(16,24,40,.62);font-size:12px">
+            Astuce: si tu ajoutes une caméra, mets-la dans <span class="mono">CAMERAS</span> côté backend.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  // Construire automatiquement la grille vidéo à partir de /api/cameras
+  async function loadVideos(){
+    const res = await fetch("/api/cameras");
+    const j = await res.json();
+    const cams = j.cameras || [];
+    const wrap = document.getElementById("videos");
+    wrap.innerHTML = "";
+
+    cams.forEach(camId => {
+      const div = document.createElement("div");
+      div.className = "video-wrap";
+      div.innerHTML = `
+        <div class="video-badge"><span class="dot ok" style="width:8px;height:8px;box-shadow:none"></span> ${camId}</div>
+        <img src="/video/${camId}" alt="${camId}">
+      `;
+      wrap.appendChild(div);
+    });
+
+    if (cams.length === 0){
+      wrap.innerHTML = "<div style='color:rgba(16,24,40,.62)'>Aucune caméra démarrée.</div>";
+    }
+  }
+  loadVideos();
+
+  // WebSocket + table + map
+  const wsDot = document.getElementById("wsDot");
+  const wsText = document.getElementById("wsText");
+  const tbody = document.querySelector("#eventsTable tbody");
+
+  function setWs(ok,msg){
+    wsDot.classList.remove("ok","bad");
+    wsDot.classList.add(ok ? "ok" : "bad");
+    wsText.textContent = msg;
+  }
+
+  function renderTable(events){
+    tbody.innerHTML = "";
+    events.slice(0, 18).forEach(ev => {
+      const tr = document.createElement("tr");
+      const tscore = (ev.target_score == null) ? "" : Number(ev.target_score).toFixed(2);
+      tr.innerHTML = `
+        <td class="mono">${ev.camera_id || ""}</td>
+        <td class="mono">${ev.track_id ?? ""}</td>
+        <td>${ev.mode ?? ""}</td>
+        <td>${ev.label ?? ""}</td>
+        <td class="mono">${tscore}</td>
+      `;
+      if (ev.mode === "TARGET") tr.style.background = "rgba(240,68,56,0.06)";
+      tbody.appendChild(tr);
+    });
+  }
+
+  // Canvas
+  const canvas = document.getElementById("map");
+  const ctx = canvas.getContext("2d");
+  let lastEvents = [];
+
+  function resizeCanvas(){
+    const r = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.floor(r.width * dpr);
+    canvas.height = Math.floor(r.height * dpr);
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  window.addEventListener("resize", () => { resizeCanvas(); drawMap(lastEvents); });
+
+  function drawGrid(){
+    const w = canvas.getBoundingClientRect().width;
+    const h = canvas.getBoundingClientRect().height;
+    ctx.clearRect(0,0,w,h);
+    ctx.fillStyle = "rgba(47,109,246,0.03)";
+    ctx.fillRect(0,0,w,h);
+    ctx.strokeStyle = "rgba(16,24,40,0.10)";
+    const step = 40;
+    for (let x=0; x<=w; x+=step){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke(); }
+    for (let y=0; y<=h; y+=step){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke(); }
+    ctx.strokeStyle = "rgba(16,24,40,0.16)";
+    ctx.strokeRect(10,10,w-20,h-20);
+  }
+  function style(ev){
+    if (ev.mode === "TARGET") return {dot:"rgba(240,68,56,0.95)", glow:"rgba(240,68,56,0.18)"};
+    if (ev.mode === "DB") return {dot:"rgba(18,183,106,0.95)", glow:"rgba(18,183,106,0.18)"};
+    return {dot:"rgba(120,120,120,0.85)", glow:"rgba(120,120,120,0.10)"};
+  }
+  function drawMap(events){
+    resizeCanvas(); drawGrid();
+    const w = canvas.getBoundingClientRect().width;
+    const h = canvas.getBoundingClientRect().height;
+    events.forEach(ev => {
+      const x = 10 + (w-20) * (ev.x ?? 0);
+      const y = 10 + (h-20) * (ev.y ?? 0);
+      const s = style(ev);
+      const r = ev.mode === "TARGET" ? 8 : (ev.mode === "DB" ? 7 : 6);
+      ctx.beginPath(); ctx.fillStyle = s.glow; ctx.arc(x,y,r+10,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.fillStyle = s.dot; ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+    });
+  }
+
+  function connectWS(){
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    const ws = new WebSocket(`${proto}://${location.host}/ws/live`);
+    ws.onopen = () => setWs(true, "WS: connecté");
+    ws.onmessage = (msg) => {
+      try{
+        const data = JSON.parse(msg.data);
+        lastEvents = data.events || [];
+        renderTable(lastEvents);
+        drawMap(lastEvents);
+      }catch(e){}
+    };
+    ws.onclose = () => { setWs(false, "WS: déconnecté (reconnexion...)"); setTimeout(connectWS, 900); };
+    ws.onerror = () => { setWs(false, "WS: erreur"); try{ ws.close(); }catch(e){} };
+  }
+
+  resizeCanvas(); drawGrid(); connectWS();
+</script>
+</body>
+</html>

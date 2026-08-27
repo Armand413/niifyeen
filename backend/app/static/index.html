@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>NiifYéén — Accueil</title>
+  <style>
+    :root{--bg:#f6f8fc;--panel:#fff;--border:rgba(16,24,40,.10);--text:rgba(16,24,40,.92);--muted:rgba(16,24,40,.62);
+      --accent:#2f6df6;--danger:#f04438;--shadow:0 14px 50px rgba(16,24,40,.10);--radius:14px;--mono:ui-monospace,Menlo,Consolas,monospace;--sans:system-ui,Segoe UI,Roboto,Arial;}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:var(--sans);color:var(--text);
+      background:radial-gradient(1200px 700px at 20% 10%, rgba(47,109,246,.10), transparent 60%),
+                 radial-gradient(900px 600px at 90% 20%, rgba(18,183,106,.10), transparent 60%),
+                 var(--bg);}
+    .container{max-width:1100px;margin:0 auto;padding:20px}
+    header{display:flex;justify-content:space-between;gap:14px;align-items:center;
+      padding:14px 16px;border:1px solid var(--border);background:rgba(255,255,255,.92);
+      border-radius:var(--radius);box-shadow:var(--shadow);position:sticky;top:12px;z-index:10;backdrop-filter:blur(10px)}
+    .brand{display:flex;gap:12px;align-items:center}
+    .logo{width:40px;height:40px;border-radius:12px;background:conic-gradient(from 210deg, var(--accent), #12b76a, #7a5af8, var(--accent));
+      box-shadow:0 12px 30px rgba(47,109,246,.20);border:1px solid rgba(16,24,40,.08)}
+    h1{margin:0;font-size:16px;font-weight:900}
+    .subtitle{margin-top:2px;font-size:12px;color:var(--muted)}
+    a{color:inherit;text-decoration:none}
+    .btnlink{border:1px solid rgba(16,24,40,.14);background:rgba(16,24,40,.03);padding:9px 12px;border-radius:12px;font-weight:900;font-size:13px}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+    @media (max-width:980px){.grid{grid-template-columns:1fr}header{position:static}}
+    .card{border:1px solid var(--border);background:var(--panel);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+    .card-header{padding:14px 16px;border-bottom:1px solid var(--border);background:linear-gradient(180deg, rgba(47,109,246,.06), rgba(255,255,255,0))}
+    .card-title{margin:0;font-size:14px;font-weight:900}
+    .card-desc{margin-top:4px;color:var(--muted);font-size:12px;line-height:1.35}
+    .card-body{padding:16px}
+    label{display:block;font-size:12px;color:var(--muted);margin:0 0 6px;font-weight:800}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    input[type="text"]{width:100%;padding:11px 12px;border-radius:12px;border:1px solid rgba(16,24,40,.14);background:#fff;outline:none}
+    input[type="file"]{width:100%;padding:10px 12px;border-radius:12px;border:1px dashed rgba(16,24,40,.22);background:rgba(47,109,246,.04);color:var(--muted)}
+    .actions{display:flex;justify-content:flex-end;gap:10px;margin-top:12px;flex-wrap:wrap}
+    button{border:1px solid rgba(16,24,40,.14);background:rgba(16,24,40,.03);padding:10px 12px;border-radius:12px;cursor:pointer;font-weight:900;font-size:13px}
+    .btn-primary{border-color:rgba(47,109,246,.35);background:linear-gradient(180deg, rgba(47,109,246,.15), rgba(47,109,246,.08))}
+    .btn-danger{border-color:rgba(240,68,56,.25);background:linear-gradient(180deg, rgba(240,68,56,.10), rgba(240,68,56,.05))}
+    .previews{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+    .thumb{width:72px;height:72px;border-radius:14px;border:1px solid rgba(16,24,40,.12);overflow:hidden;background:rgba(16,24,40,.03)}
+    .thumb img{width:100%;height:100%;object-fit:cover;display:block}
+    .mono{font-family:var(--mono);font-size:12px;color:rgba(16,24,40,.78);white-space:pre-wrap}
+    .result{border:1px solid rgba(16,24,40,.12);background:rgba(16,24,40,.03);border-radius:12px;padding:10px 12px;margin-top:10px}
+  </style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="brand">
+      <div class="logo"></div>
+      <div>
+        <h1>NiifYéén — Accueil</h1>
+        <div class="subtitle">Enrôlement + Recherche (définit une cible)</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:flex-end">
+      <a class="btnlink" href="/cameras">Voir les caméras</a>
+    </div>
+  </header>
+
+  <div class="grid">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Enrôlement</div>
+        <div class="card-desc">Ajoute une personne en base (utile si visage visible).</div>
+      </div>
+      <div class="card-body">
+        <form id="enrollForm">
+          <div class="row">
+            <div>
+              <label>Nom</label>
+              <input name="nom" type="text" required>
+            </div>
+            <div>
+              <label>Infos (optionnel)</label>
+              <input name="infos" type="text">
+            </div>
+          </div>
+          <div style="margin-top:12px;">
+            <label>Photos (plusieurs)</label>
+            <input id="enrollFiles" type="file" name="photos" accept="image/*" multiple required>
+            <div id="enrollPreviews" class="previews"></div>
+          </div>
+          <div class="actions">
+            <button type="button" id="clearEnroll">Effacer</button>
+            <button type="submit" class="btn-primary">Enrôler</button>
+          </div>
+        </form>
+        <div id="enrollResult" class="result mono" style="display:none;"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Recherche par image → définit une CIBLE</div>
+        <div class="card-desc">La cible sera recherchée sur la page Caméras.</div>
+      </div>
+      <div class="card-body">
+        <form id="searchForm">
+          <label>Photo</label>
+          <input id="searchFile" type="file" name="photos" accept="image/*" multiple required>
+          <div id="searchPreview" class="previews"></div>
+          <div class="actions">
+            <button type="button" id="clearSearch">Effacer</button>
+            <button type="button" id="clearTarget" class="btn-danger">Arrêter la cible</button>
+            <button type="submit" class="btn-primary">Définir la cible</button>
+          </div>
+        </form>
+        <div id="searchResult" class="result mono" style="display:none;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  function setJson(el, obj){ el.style.display="block"; el.textContent = JSON.stringify(obj,null,2); }
+  function clearPreviews(c){ c.innerHTML=""; }
+  function fileToThumb(file){
+    const div=document.createElement("div"); div.className="thumb";
+    const img=document.createElement("img"); div.appendChild(img);
+    const url=URL.createObjectURL(file); img.src=url; img.onload=()=>URL.revokeObjectURL(url);
+    return div;
+  }
+
+  // Enroll
+  const enrollFiles=document.getElementById("enrollFiles");
+  const enrollPreviews=document.getElementById("enrollPreviews");
+  const enrollResult=document.getElementById("enrollResult");
+  enrollFiles.addEventListener("change", ()=>{
+    clearPreviews(enrollPreviews);
+    [...enrollFiles.files].slice(0,12).forEach(f=>enrollPreviews.appendChild(fileToThumb(f)));
+  });
+  document.getElementById("clearEnroll").addEventListener("click", ()=>{
+    document.getElementById("enrollForm").reset();
+    clearPreviews(enrollPreviews);
+    enrollResult.style.display="none";
+  });
+  document.getElementById("enrollForm").addEventListener("submit", async (e)=>{
+    e.preventDefault();
+    enrollResult.style.display="none";
+    const fd=new FormData(e.target);
+    const res=await fetch("/participants/enroll",{method:"POST",body:fd});
+    const j=await res.json();
+    setJson(enrollResult,j);
+  });
+
+  // Search
+  const searchFile=document.getElementById("searchFile");
+  const searchPreview=document.getElementById("searchPreview");
+  const searchResult=document.getElementById("searchResult");
+  searchFile.addEventListener("change", () => {
+  clearPreviews(searchPreview);
+  [...searchFile.files].slice(0, 12).forEach(f => searchPreview.appendChild(fileToThumb(f)));
+});
+  document.getElementById("clearSearch").addEventListener("click", ()=>{
+    document.getElementById("searchForm").reset();
+    clearPreviews(searchPreview);
+    searchResult.style.display="none";
+  });
+  document.getElementById("clearTarget").addEventListener("click", async ()=>{
+    await fetch("/target/clear",{method:"POST"});
+  });
+  document.getElementById("searchForm").addEventListener("submit", async (e)=>{
+    e.preventDefault();
+    searchResult.style.display="none";
+    const fd=new FormData(e.target);
+    const res=await fetch("/search/by-image",{method:"POST",body:fd});
+    const j=await res.json();
+    setJson(searchResult,j);
+  });
+</script>
+</body>
+</html>
