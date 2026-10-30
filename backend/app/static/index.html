@@ -130,6 +130,14 @@
             <div class="hint">Conseil : 3 à 10 photos, angles/lumières variés.</div>
           </div>
 
+          <div style="margin-top:12px;">
+            <label style="display:flex;gap:8px;align-items:flex-start;font-weight:400;">
+              <input type="checkbox" name="consentement" value="true" required style="margin-top:3px;">
+              <span>La personne a donné son consentement à l'enregistrement de son empreinte faciale.
+              Les photos ne sont pas conservées : seule une empreinte numérique l'est, jusqu'à suppression de la personne ci-dessous.</span>
+            </label>
+          </div>
+
           <div class="actions">
             <button type="button" id="clearEnroll">Effacer</button>
             <button type="submit" class="btn-primary">Enrôler</button>
@@ -165,12 +173,24 @@
         </div>
       </div>
     </div>
+
+    <!-- PARTICIPANTS -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Personnes enrôlées</div>
+        <div class="card-desc">Supprimer une personne efface son empreinte et retire son nom du journal.</div>
+      </div>
+      <div class="card-body">
+        <div id="participantsList" class="mono"></div>
+        <div id="participantsStatus" class="hint"></div>
+      </div>
+    </div>
   </div>
 </div>
 
 <script>
   function setJson(el, obj){ el.style.display="block"; el.textContent = JSON.stringify(obj, null, 2); }
-  function clearPreviews(c){ c.innerHTML=""; }
+  function clearPreviews(c){ c.replaceChildren(); }
   function fileToThumb(file){
     const div = document.createElement("div");
     div.className = "thumb";
@@ -203,9 +223,44 @@
     enrollResult.style.display = "none";
     const fd = new FormData(e.target);
     const res = await fetch("/participants/enroll", { method:"POST", body: fd });
-    const j = await res.json();
-    setJson(enrollResult, j);
+    setJson(enrollResult, await res.json());
+    if (res.ok) loadParticipants();
   });
+
+  // PARTICIPANTS (liste + suppression)
+  const participantsList = document.getElementById("participantsList");
+  const participantsStatus = document.getElementById("participantsStatus");
+
+  async function loadParticipants(){
+    try{
+      const res = await fetch("/participants");
+      if (!res.ok) throw new Error();
+      const items = await res.json();
+      participantsList.replaceChildren();
+      participantsStatus.textContent = items.length ? "" : "Aucune personne enrôlée.";
+      items.forEach(p => {
+        const row = document.createElement("div");
+        row.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 0;";
+        const name = document.createElement("span");
+        name.textContent = `#${p.id} — ${p.nom}`;
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "btn-danger";
+        btn.textContent = "Supprimer";
+        btn.addEventListener("click", async () => {
+          if (!confirm(`Supprimer ${p.nom} ? Son empreinte sera effacée définitivement.`)) return;
+          const r = await fetch(`/participants/${p.id}`, { method: "DELETE" });
+          if (!r.ok) { participantsStatus.textContent = "Suppression impossible."; return; }
+          loadParticipants();
+        });
+        row.append(name, btn);
+        participantsList.appendChild(row);
+      });
+    }catch(err){
+      participantsStatus.textContent = "Liste indisponible.";
+    }
+  }
+  loadParticipants();
 
   // SEARCH previews (multi)
   const searchFiles = document.getElementById("searchFiles");

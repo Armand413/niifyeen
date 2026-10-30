@@ -1,0 +1,5 @@
+[
+  { "id": "entre",  "source": 0,                                  "label": "Entrée" },
+  { "id": "salle",  "source": "http://192.168.0.10:8081/video",   "label": "Salle" },
+  { "id": "sortie", "source": "http://192.168.0.11:8081/video",   "label": "Sortie" }
+]

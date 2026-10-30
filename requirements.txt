@@ -1,0 +1,11 @@
+# Dépendances d'exécution. Bornes minimales, à figer (pip freeze) une fois
+# l'installation validée sur votre machine.
+fastapi>=0.110
+uvicorn[standard]>=0.27
+python-multipart>=0.0.9
+sqlalchemy>=2.0
+numpy>=1.26
+opencv-python>=4.9
+ultralytics>=8.1      # YOLOv8 + ByteTrack (installe aussi torch)
+insightface>=0.7.3    # reconnaissance faciale (ArcFace)
+onnxruntime>=1.17     # moteur d'inférence d'InsightFace (CPU)

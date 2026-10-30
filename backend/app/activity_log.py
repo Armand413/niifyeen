@@ -1,11 +1,11 @@
 """Aggregate camera activity without exposing person-level fields."""
-from datetime import datetime, timedelta
+from datetime import timedelta
 from sqlalchemy import func
-from .db import Detection
+from .db import Detection, utcnow
 
 
 def read_activity(db, minutes=60, camera_id="", page=1, page_size=50):
-    until = datetime.utcnow()
+    until = utcnow()
     since = until - timedelta(minutes=minutes)
     minute = func.strftime("%Y-%m-%dT%H:%M:00Z", Detection.timestamp)
     query = db.query(minute.label("minute"), Detection.camera_id,

@@ -1,1 +1,25 @@
-﻿models_insightface/
+# Environnements et caches Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# IDE
+.idea/
+.vscode/
+
+# Données personnelles et biométriques : ne JAMAIS les versionner
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+backups/
+
+# Modèles (téléchargés automatiquement au premier lancement)
+models_insightface/
+*.pt
+
+# Configuration locale (adresses des caméras)
+cameras.json
+.env

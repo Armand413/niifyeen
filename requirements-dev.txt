@@ -1,0 +1,7 @@
+# Suffisant pour lancer les tests (les modèles lourds sont simulés).
+fastapi>=0.110
+httpx>=0.27
+python-multipart>=0.0.9
+sqlalchemy>=2.0
+numpy>=1.26
+opencv-python-headless>=4.9

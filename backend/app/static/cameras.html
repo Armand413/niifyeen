@@ -212,11 +212,17 @@
     cameraMeta = j.camera_meta || {};
 
     const wrap = document.getElementById("videos");
-    wrap.innerHTML = "";
+    wrap.replaceChildren();
     cams.forEach(camId=>{
       const div = document.createElement("div");
       div.className = "video";
-      div.innerHTML = `<div class="badge">${camId}</div><img src="/video/${camId}" alt="${camId}">`;
+      const badge = document.createElement("div");
+      badge.className = "badge";
+      badge.textContent = camId;
+      const img = document.createElement("img");
+      img.src = "/video/" + encodeURIComponent(camId);
+      img.alt = camId;
+      div.append(badge, img);
       wrap.appendChild(div);
     });
   }
@@ -240,18 +246,29 @@
     return String(x);
   }
 
+  // Construit une ligne de tableau avec textContent : aucune donnée n'est interprétée comme du HTML.
+  function makeRow(cells){
+    const tr = document.createElement("tr");
+    cells.forEach(([value, cls])=>{
+      const td = document.createElement("td");
+      if (cls) td.className = cls;
+      td.textContent = value;
+      tr.appendChild(td);
+    });
+    return tr;
+  }
+
   function renderTable(events){
-    tbody.innerHTML = "";
+    tbody.replaceChildren();
     (events||[]).slice(0, 25).forEach(ev=>{
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td class="mono">${ev.camera_id||""}</td>
-        <td class="mono">${ev.track_id??""}</td>
-        <td>${ev.mode||""}</td>
-        <td>${ev.label ?? ""}</td>
-        <td class="mono">${fmt(ev.target_score)}</td>
-        <td class="mono">${fmt(ev.db_score)}</td>
-      `;
+      const tr = makeRow([
+        [ev.camera_id || "", "mono"],
+        [ev.track_id ?? "", "mono"],
+        [ev.mode || ""],
+        [ev.label ?? ""],
+        [fmt(ev.target_score), "mono"],
+        [fmt(ev.db_score), "mono"],
+      ]);
       if(ev.mode==="TARGET") tr.style.background = "rgba(240,68,56,0.06)";
       if(ev.mode==="DB") tr.style.background = "rgba(18,183,106,0.06)";
       tbody.appendChild(tr);
@@ -259,17 +276,15 @@
   }
 
   function renderPath(path){
-    pathBody.innerHTML = "";
+    pathBody.replaceChildren();
     (path||[]).slice(-40).forEach((p, idx)=>{
-      const tr = document.createElement("tr");
       const d = new Date((p.ts||0) * 1000);
-      tr.innerHTML = `
-        <td class="mono">${(path.length - Math.min(40, path.length)) + idx + 1}</td>
-        <td class="mono">${p.camera_id}</td>
-        <td class="mono">${isNaN(d.getTime()) ? "" : d.toLocaleTimeString()}</td>
-        <td class="mono">${fmt(p.score)}</td>
-      `;
-      pathBody.appendChild(tr);
+      pathBody.appendChild(makeRow([
+        [(path.length - Math.min(40, path.length)) + idx + 1, "mono"],
+        [p.camera_id, "mono"],
+        [isNaN(d.getTime()) ? "" : d.toLocaleTimeString(), "mono"],
+        [fmt(p.score), "mono"],
+      ]));
     });
   }
 

@@ -1,77 +1,54 @@
 import asyncio
-import time
-import threading
 import logging
+import time
+from contextlib import asynccontextmanager
+from datetime import timedelta
 from pathlib import Path
-from typing import List, Dict, Any
-from datetime import datetime, timedelta
+from typing import List, Optional
 
 import numpy as np
-from fastapi import FastAPI, UploadFile, File, Form, WebSocket, WebSocketDisconnect, Query
+from fastapi import (FastAPI, UploadFile, File, Form, HTTPException, WebSocket,
+                     WebSocketDisconnect, Query)
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .db import init_db, SessionLocal, Participant, EmbeddingRef, Detection
-from .vision import read_image_bytes, detect_faces_safe
-from .person_pipeline import PersonPipeline
-from .video_stream import mjpeg_frames
+from . import config
 from .activity_log import read_activity
-from .reid import GlobalReId  # optionnel si tu l'utilises
+from .db import (init_db, SessionLocal, Participant, EmbeddingRef, Detection,
+                 utcnow, to_iso_utc, delete_participant)
+from .db_logger import DBLogger
+from .person_pipeline import PersonPipeline
+from .reid import GlobalReId
+from .target_path import TargetTracker, TargetWorker
+from .video_stream import mjpeg_frames
+from .vision import read_image_bytes, detect_faces_safe
 
+log = logging.getLogger(__name__)
 BASE_DIR = Path(__file__).resolve().parent
 
-app = FastAPI(title="NiifYéén — Cheminement + Historique + DB names")
-init_db()
-app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
-# ---- CONFIG CAMERAS ----
-CAMERAS = [
-    {"id": "entre", "source": 0},
-    {"id": "salle", "source": "http://172.20.10.2:8081/video"},
-    {"id": "sortie", "source": "http://172.20.10.8:8081/video"},
-]
-
-
-
-# Chaque caméra = un point sur la carte (0..1)
-CAMERA_META = {
-    "cam0": {"x": 0.2, "y": 0.80, "label": "Entrée"},
-    "cam1": {"x": 0.50, "y": 0.50, "label": "Couloir"},
-    "cam2": {"x": 0.8, "y": 0.20, "label": "Salle"},
-}
-
-CAM_SWITCH_CONFIRM_SEC = 0.8
-TARGET_TIMEOUT_SEC = 3.0
-TARGET_PATH_MAX = 200
-
-# Logging DB : éviter trop d'inserts
-LOG_EVERY_SEC = 0.8  # par (cam_id, track_id, mode)
-
-
+# ---------- Embeddings ----------
 def embedding_to_bytes(emb: np.ndarray) -> bytes:
     return emb.astype(np.float32).tobytes()
+
 
 def bytes_to_embedding(b: bytes) -> np.ndarray:
     return np.frombuffer(b, dtype=np.float32)
 
+
 def load_known_from_db():
     db = SessionLocal()
     try:
-        known = []
-        q = (
+        rows = (
             db.query(EmbeddingRef, Participant)
             .join(Participant, Participant.id == EmbeddingRef.participant_id)
             .all()
         )
-        for emb_ref, p in q:
-            known.append({
-                "participant_id": p.id,
-                "nom": p.nom,
-                "embedding": bytes_to_embedding(emb_ref.embedding)
-            })
-        return known
+        return [{"participant_id": p.id, "nom": p.nom,
+                 "embedding": bytes_to_embedding(e.embedding)} for e, p in rows]
     finally:
         db.close()
+
 
 def refresh_known():
     known = load_known_from_db()
@@ -79,120 +56,75 @@ def refresh_known():
         cam.set_known(known)
 
 
-class DBLogger:
-    def __init__(self):
-        self.running = False
-        self.thread = None
-        self.last = {}  # (cam,track,mode) -> ts
-
-    def start(self):
-        self.running = True
-        self.thread = threading.Thread(target=self.loop, daemon=True)
-        self.thread.start()
-
-    def stop(self):
-        self.running = False
-
-    def loop(self):
-        while self.running:
-            try:
-                now = time.time()
-                cams = app.state.cams
-                db = SessionLocal()
-                try:
-                    for cam in cams.values():
-                        for ev in (cam.latest_events or []):
-                            cam_id = ev.get("camera_id")
-                            track_id = ev.get("track_id")
-                            mode = ev.get("mode") or "UNK"
-
-                            key = (cam_id, track_id, mode)
-                            last_ts = self.last.get(key, 0.0)
-                            if now - last_ts < LOG_EVERY_SEC:
-                                continue
-                            self.last[key] = now
-
-                            det = Detection(
-                                camera_id=str(cam_id),
-                                track_id=int(track_id) if track_id is not None else None,
-                                global_id=int(ev["global_id"]) if ev.get("global_id") is not None else None,
-                                mode=str(mode),
-                                label=ev.get("label"),
-                                target_score=float(ev["target_score"]) if ev.get("target_score") is not None else None,
-                                db_score=float(ev["db_score"]) if ev.get("db_score") is not None else None,
-                                x=float(ev["x"]) if ev.get("x") is not None else None,
-                                y=float(ev["y"]) if ev.get("y") is not None else None,
-                                timestamp=datetime.utcnow(),
-                            )
-                            db.add(det)
-                    db.commit()
-                finally:
-                    db.close()
-            except Exception:
-                logging.getLogger(__name__).exception("Impossible d'enregistrer les observations")
-
-            time.sleep(0.25)
+def _face_embedding(img) -> Optional[np.ndarray]:
+    """Embedding du plus grand visage de l'image, ou None. Bloquant : à lancer dans un thread."""
+    faces = detect_faces_safe(img)
+    if not faces:
+        return None
+    biggest = max(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]))
+    return np.asarray(biggest.normed_embedding, dtype=np.float32)
 
 
-@app.on_event("startup")
-def startup():
-    # (Optionnel) ReID global
-    app.state.reid = GlobalReId(sim_threshold=0.45, ttl_sec=20.0)
+async def _read_upload(up: UploadFile) -> bytes:
+    """Lit un fichier envoyé sans jamais dépasser la limite de taille en mémoire."""
+    data = await up.read(config.MAX_UPLOAD_BYTES + 1)
+    if len(data) > config.MAX_UPLOAD_BYTES:
+        mb = config.MAX_UPLOAD_BYTES // (1024 * 1024)
+        raise HTTPException(413, f"« {up.filename} » dépasse la taille maximale ({mb} Mo).")
+    return data
 
-    cams = {}
+
+async def _embeddings_from_uploads(photos: List[UploadFile]):
+    """Retourne [(embedding, nom_de_fichier)] pour les photos contenant un visage."""
+    results = []
+    for up in photos:
+        img = read_image_bytes(await _read_upload(up))
+        if img is None:
+            continue
+        emb = await asyncio.to_thread(_face_embedding, img)
+        if emb is not None:
+            results.append((emb, up.filename))
+    return results
+
+
+# ---------- Cycle de vie ----------
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    cameras = config.load_cameras()
+    app.state.camera_meta = config.camera_meta(cameras)
+    app.state.reid = GlobalReId(sim_threshold=config.REID_THRESHOLD, ttl_sec=20.0)
+    app.state.cams = {}
+    app.state.tracker = TargetTracker()
     known = load_known_from_db()
 
-    for cfg in CAMERAS:
-        cam_id = cfg["id"]
+    for cfg in cameras:
         cam = PersonPipeline(
-            source=cfg["source"],
-            camera_id=cam_id,
-            reid=app.state.reid,
-            capture_size=(1280, 720),
-            out_size=(640, 360),
-            tracker_yaml="bytetrack.yaml",
-            imgsz=480,
-            yolo_conf=0.35,
-            head_ratio=0.50,
-            recog_every_sec=0.60,
-            lock_hold_sec=3.0,
-            jpeg_quality=70
+            source=cfg["source"], camera_id=cfg["id"], reid=app.state.reid,
+            capture_size=(1280, 720), out_size=(640, 360),
+            tracker_yaml="bytetrack.yaml", imgsz=480, yolo_conf=0.35,
+            head_ratio=0.50, recog_every_sec=0.60, lock_hold_sec=3.0, jpeg_quality=70,
         )
         cam.set_known(known)
         cam.start()
-        cams[cam_id] = cam
+        app.state.cams[cfg["id"]] = cam
 
-    app.state.cams = cams
-    app.state.camera_meta = CAMERA_META
-
-    app.state.target_status = {
-        "active": False,
-        "camera_id": None,
-        "track_id": None,
-        "global_id": None,
-        "score": None,
-        "last_seen_ts": 0.0,
-    }
-
-    app.state.target_path = []
-    app.state._pending_cam = None
-    app.state._pending_since = 0.0
-    app.state._was_active = False
-
-    app.state.logger = DBLogger()
+    app.state.target_worker = TargetWorker(app.state.tracker, lambda: app.state.cams)
+    app.state.target_worker.start()
+    app.state.logger = DBLogger(lambda: app.state.cams)
     app.state.logger.start()
-
-    print(f"[MAIN] Caméras démarrées: {list(cams.keys())}")
-
-
-@app.on_event("shutdown")
-def shutdown():
+    print(f"[MAIN] Caméras démarrées: {list(app.state.cams.keys())}")
     try:
+        yield
+    finally:
         app.state.logger.stop()
-    except Exception:
-        pass
-    for cam in app.state.cams.values():
-        cam.stop()
+        app.state.target_worker.stop()
+        for cam in app.state.cams.values():
+            cam.stop()
+
+
+app = FastAPI(title="NiifYéén — Cheminement + Historique + DB names", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 
 # ---------- Pages ----------
@@ -200,17 +132,18 @@ def shutdown():
 def page_home():
     return (BASE_DIR / "static" / "index.html").read_text(encoding="utf-8")
 
+
 @app.get("/cameras", response_class=HTMLResponse)
 def page_cameras():
     return (BASE_DIR / "static" / "cameras.html").read_text(encoding="utf-8")
 
 
-# ---------- API ----------
 @app.get("/logs", response_class=HTMLResponse)
 def page_logs():
     return (BASE_DIR / "static" / "logs.html").read_text(encoding="utf-8")
 
 
+# ---------- API ----------
 @app.get("/api/logs/activity")
 def activity_logs(minutes: int = Query(60, ge=1, le=10080),
                   camera_id: str = Query("", max_length=100),
@@ -232,7 +165,7 @@ def api_cameras():
 def detections_recent(minutes: int = Query(10, ge=1, le=240)):
     db = SessionLocal()
     try:
-        since = datetime.utcnow() - timedelta(minutes=minutes)
+        since = utcnow() - timedelta(minutes=minutes)
         rows = (
             db.query(Detection)
             .filter(Detection.timestamp >= since)
@@ -243,7 +176,7 @@ def detections_recent(minutes: int = Query(10, ge=1, le=240)):
         return [
             {
                 "camera_id": r.camera_id,
-                "timestamp": r.timestamp.isoformat(),
+                "timestamp": to_iso_utc(r.timestamp),
                 "track_id": r.track_id,
                 "global_id": r.global_id,
                 "mode": r.mode,
@@ -259,161 +192,109 @@ def detections_recent(minutes: int = Query(10, ge=1, le=240)):
         db.close()
 
 
-@app.post("/participants/enroll")
-async def enroll(
-    nom: str = Form(...),
-    infos: str = Form(""),
-    photos: List[UploadFile] = File(...)
-):
+# ---------- Personnes enrôlées ----------
+@app.get("/participants")
+def list_participants():
     db = SessionLocal()
     try:
-        p = Participant(nom=nom, infos=infos)
-        db.add(p)
-        db.commit()
-        db.refresh(p)
-
-        saved = 0
-        for up in photos:
-            img = read_image_bytes(await up.read())
-            if img is None:
-                continue
-            faces = detect_faces_safe(img)
-            if not faces:
-                continue
-            faces = sorted(
-                faces,
-                key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]),
-                reverse=True
-            )
-            emb = faces[0].normed_embedding
-            db.add(EmbeddingRef(participant_id=p.id, embedding=embedding_to_bytes(emb), source=up.filename))
-            saved += 1
-
-        db.commit()
-        refresh_known()
-        return {"participant_id": p.id, "saved_embeddings": saved}
+        rows = db.query(Participant).order_by(Participant.id).all()
+        return [{"id": p.id, "nom": p.nom,
+                 "date_consentement": to_iso_utc(p.date_consentement) if p.date_consentement else None}
+                for p in rows]
     finally:
         db.close()
 
 
+@app.post("/participants/enroll")
+async def enroll(
+    nom: str = Form(..., max_length=config.MAX_NAME_LENGTH),
+    infos: str = Form("", max_length=config.MAX_INFOS_LENGTH),
+    consentement: bool = Form(False),
+    photos: List[UploadFile] = File(...),
+):
+    nom = nom.strip()
+    if not nom:
+        raise HTTPException(422, "Le nom est obligatoire.")
+    if not consentement:
+        raise HTTPException(400, "Le consentement de la personne est obligatoire pour l'enrôler.")
+    if not 1 <= len(photos) <= config.MAX_ENROLL_PHOTOS:
+        raise HTTPException(400, f"Envoyer entre 1 et {config.MAX_ENROLL_PHOTOS} photos.")
+
+    # On calcule les empreintes *avant* de créer la personne : aucune fiche vide si aucun visage.
+    found = await _embeddings_from_uploads(photos)
+    if not found:
+        raise HTTPException(422, "Aucun visage exploitable dans les photos envoyées.")
+
+    db = SessionLocal()
+    try:
+        p = Participant(nom=nom, infos=infos.strip(), date_consentement=utcnow())
+        db.add(p)
+        db.flush()
+        for emb, filename in found:
+            db.add(EmbeddingRef(participant_id=p.id, embedding=embedding_to_bytes(emb), source=filename))
+        db.commit()
+        participant_id = p.id
+    finally:
+        db.close()
+
+    refresh_known()
+    return {"participant_id": participant_id, "saved_embeddings": len(found),
+            "ignored_photos": len(photos) - len(found)}
+
+
+@app.delete("/participants/{participant_id}")
+def remove_participant(participant_id: int):
+    db = SessionLocal()
+    try:
+        result = delete_participant(db, participant_id)
+    finally:
+        db.close()
+    if result is None:
+        raise HTTPException(404, "Personne introuvable.")
+    refresh_known()
+    return {"deleted": True, **result}
+
+
+# ---------- Cible ----------
 @app.post("/search/by-image")
 async def search_by_image(photos: List[UploadFile] = File(...)):
-    embeddings = []
-    for up in photos[:10]:
-        img = read_image_bytes(await up.read())
-        if img is None:
-            continue
-        faces = detect_faces_safe(img)
-        if not faces:
-            continue
-        faces = sorted(
-            faces,
-            key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]),
-            reverse=True
-        )
-        embeddings.append(faces[0].normed_embedding.astype(np.float32))
+    found = await _embeddings_from_uploads(photos[:config.MAX_SEARCH_PHOTOS])
 
-    if not embeddings:
+    if not found:
         for cam in app.state.cams.values():
             cam.clear_target()
-        app.state.target_path = []
-        app.state.target_status["active"] = False
+        app.state.tracker.reset()
         return {"target_set": False, "reason": "no_valid_face"}
 
-    mean_emb = np.mean(np.stack(embeddings, axis=0), axis=0)
+    mean_emb = np.mean(np.stack([e for e, _ in found], axis=0), axis=0)
     mean_emb = mean_emb / (np.linalg.norm(mean_emb) + 1e-9)
 
     for cam in app.state.cams.values():
-        cam.set_target(mean_emb, label="CIBLE", threshold=0.40)
+        cam.set_target(mean_emb, label="CIBLE", threshold=config.TARGET_THRESHOLD)
+    app.state.tracker.reset()
 
-    # reset path
-    app.state.target_path = []
-    app.state.target_status["active"] = False
-    app.state._pending_cam = None
-    app.state._pending_since = 0.0
-    app.state._was_active = False
-
-    return {"target_set": True, "target_threshold": 0.40, "nb_photos_utilisees": len(embeddings)}
+    return {"target_set": True, "target_threshold": config.TARGET_THRESHOLD,
+            "nb_photos_utilisees": len(found)}
 
 
 @app.post("/target/clear")
 def clear_target():
     for cam in app.state.cams.values():
         cam.clear_target()
-    app.state.target_status["active"] = False
-    app.state.target_path = []
-    app.state._pending_cam = None
-    app.state._pending_since = 0.0
-    app.state._was_active = False
+    app.state.tracker.reset()
     return {"cleared": True}
 
 
-def mjpeg_gen(cam: PersonPipeline):
-    return mjpeg_frames(cam)
-
-
+# ---------- Vidéo & temps réel ----------
 @app.get("/video/{cam_id}")
 def video_cam(cam_id: str):
     cam = app.state.cams.get(cam_id)
     if not cam:
         return JSONResponse({"error": "cam_id inconnu"}, status_code=404)
     return StreamingResponse(
-        mjpeg_gen(cam), media_type="multipart/x-mixed-replace; boundary=frame",
+        mjpeg_frames(cam), media_type="multipart/x-mixed-replace; boundary=frame",
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )
-
-
-def update_target_and_path(best: Dict[str, Any] | None, now: float):
-    status = app.state.target_status
-
-    if best is None:
-        ts = status.get("last_seen_ts", 0.0)
-        if ts and (now - ts) > TARGET_TIMEOUT_SEC:
-            status["active"] = False
-            status["camera_id"] = None
-            status["track_id"] = None
-            status["global_id"] = None
-            status["score"] = None
-        return
-
-    status.update({
-        "active": True,
-        "camera_id": best["camera_id"],
-        "track_id": best.get("track_id"),
-        "global_id": best.get("global_id"),
-        "score": best.get("score"),
-        "last_seen_ts": now
-    })
-
-    current_cam = best["camera_id"]
-
-    if not app.state._was_active:
-        app.state.target_path.append({"camera_id": current_cam, "ts": now, "score": best.get("score")})
-        app.state.target_path = app.state.target_path[-TARGET_PATH_MAX:]
-        app.state._was_active = True
-        app.state._pending_cam = None
-        app.state._pending_since = 0.0
-        return
-
-    last_cam = app.state.target_path[-1]["camera_id"] if app.state.target_path else None
-    pending_cam = app.state._pending_cam
-
-    if pending_cam is None:
-        if current_cam != last_cam:
-            app.state._pending_cam = current_cam
-            app.state._pending_since = now
-        return
-
-    if current_cam != pending_cam:
-        app.state._pending_cam = current_cam
-        app.state._pending_since = now
-        return
-
-    if (now - app.state._pending_since) >= CAM_SWITCH_CONFIRM_SEC:
-        app.state.target_path.append({"camera_id": pending_cam, "ts": now, "score": best.get("score")})
-        app.state.target_path = app.state.target_path[-TARGET_PATH_MAX:]
-        app.state._pending_cam = None
-        app.state._pending_since = 0.0
 
 
 @app.websocket("/ws/live")
@@ -421,33 +302,13 @@ async def ws_live(ws: WebSocket):
     await ws.accept()
     try:
         while True:
-            now = time.time()
-
-            events = []
-            best = None
-            for cam in app.state.cams.values():
-                for ev in (cam.latest_events or []):
-                    events.append(ev)
-                    if ev.get("mode") == "TARGET":
-                        score = ev.get("target_score")
-                        score = float(score) if score is not None else 0.0
-                        if best is None or score > best["score"]:
-                            best = {
-                                "camera_id": ev.get("camera_id"),
-                                "track_id": ev.get("track_id"),
-                                "global_id": ev.get("global_id"),
-                                "score": score
-                            }
-
-            update_target_and_path(best, now)
-
+            events = [ev for cam in list(app.state.cams.values()) for ev in list(cam.latest_events or [])]
             await ws.send_json({
                 "events": events,
                 "cameras": list(app.state.cams.keys()),
                 "camera_meta": app.state.camera_meta,
-                "target": app.state.target_status,
-                "target_path": app.state.target_path
+                **app.state.tracker.snapshot(),
             })
             await asyncio.sleep(0.1)
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, RuntimeError):
         pass
