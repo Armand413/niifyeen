@@ -3,142 +3,200 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>NiifYéén — Caméras</title>
+  <title>NiifYéén — Caméras & Cheminement</title>
   <style>
-    :root{
-      --bg:#f6f8fc; --panel:#fff; --border:rgba(16,24,40,.10);
-      --text:rgba(16,24,40,.92); --muted:rgba(16,24,40,.62);
-      --accent:#2f6df6; --ok:#12b76a; --danger:#f04438;
-      --shadow:0 14px 50px rgba(16,24,40,.10);
-      --radius:14px; --mono:ui-monospace,Menlo,Consolas,monospace; --sans:system-ui,Segoe UI,Roboto,Arial;
-    }
+    :root{--bg:#f6f8fc;--panel:#fff;--border:rgba(16,24,40,.10);--text:rgba(16,24,40,.92);--muted:rgba(16,24,40,.62);
+      --ok:#12b76a;--danger:#f04438;--shadow:0 14px 50px rgba(16,24,40,.10);--radius:14px;--mono:ui-monospace,Menlo,Consolas,monospace;--sans:system-ui,Segoe UI,Roboto,Arial;}
     *{box-sizing:border-box}
-    body{margin:0;font-family:var(--sans);color:var(--text);
-      background:radial-gradient(1200px 700px at 20% 10%, rgba(47,109,246,.10), transparent 60%),
-                 radial-gradient(900px 600px at 90% 20%, rgba(18,183,106,.10), transparent 60%),
-                 var(--bg);}
+    body{margin:0;font-family:var(--sans);color:var(--text);background:var(--bg)}
     .container{max-width:1200px;margin:0 auto;padding:20px}
-    header{display:flex;justify-content:space-between;gap:14px;align-items:center;
-      padding:14px 16px;border:1px solid var(--border);background:rgba(255,255,255,.92);
-      border-radius:var(--radius);box-shadow:var(--shadow);position:sticky;top:12px;z-index:10;backdrop-filter:blur(10px)}
-    .brand{display:flex;gap:12px;align-items:center}
-    .logo{width:40px;height:40px;border-radius:12px;background:conic-gradient(from 210deg, var(--accent), var(--ok), #7a5af8, var(--accent));
-      box-shadow:0 12px 30px rgba(47,109,246,.20);border:1px solid rgba(16,24,40,.08)}
-    h1{margin:0;font-size:16px;font-weight:900}
-    .subtitle{margin-top:2px;font-size:12px;color:var(--muted)}
-    .pill{display:inline-flex;gap:8px;align-items:center;padding:7px 10px;border-radius:999px;border:1px solid rgba(16,24,40,.12);
-      background:rgba(16,24,40,.03);color:rgba(16,24,40,.72);font-size:12px;white-space:nowrap}
-    .dot{width:10px;height:10px;border-radius:50%;background:rgba(16,24,40,.18);box-shadow:0 0 0 6px rgba(16,24,40,.06)}
-    .dot.ok{background:var(--ok);box-shadow:0 0 0 6px rgba(18,183,106,.14)}
-    .dot.bad{background:var(--danger);box-shadow:0 0 0 6px rgba(240,68,56,.14)}
+    header{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:14px 16px;border:1px solid var(--border);background:var(--panel);border-radius:var(--radius);box-shadow:var(--shadow)}
+    .pill{display:inline-flex;gap:8px;align-items:center;padding:7px 10px;border-radius:999px;border:1px solid rgba(16,24,40,.12);background:rgba(16,24,40,.03);font-size:12px}
+    .dot{width:10px;height:10px;border-radius:50%;background:rgba(16,24,40,.18)}
+    .dot.ok{background:var(--ok)} .dot.bad{background:var(--danger)}
     a{color:inherit;text-decoration:none}
-    .btnlink{border:1px solid rgba(16,24,40,.14);background:rgba(16,24,40,.03);padding:9px 12px;border-radius:12px;font-weight:900;font-size:13px}
-    .grid{display:grid;grid-template-columns: 1.2fr 0.8fr; gap:16px; margin-top:16px}
-    @media (max-width:980px){.grid{grid-template-columns:1fr}header{position:static}}
+    .btn{border:1px solid rgba(16,24,40,.14);background:rgba(16,24,40,.03);padding:9px 12px;border-radius:12px;font-weight:900;font-size:13px}
+    .grid{display:grid;grid-template-columns:1.2fr .8fr;gap:16px;margin-top:16px}
+    @media (max-width:980px){.grid{grid-template-columns:1fr}}
     .card{border:1px solid var(--border);background:var(--panel);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
-    .card-header{padding:14px 16px;border-bottom:1px solid var(--border);background:linear-gradient(180deg, rgba(47,109,246,.06), rgba(255,255,255,0))}
-    .card-title{margin:0;font-size:14px;font-weight:900}
-    .card-desc{margin-top:4px;color:var(--muted);font-size:12px;line-height:1.35}
-    .card-body{padding:16px}
-    .videoGrid{display:grid;grid-template-columns:1fr 1fr; gap:12px}
+    .h{padding:12px 14px;border-bottom:1px solid var(--border);font-weight:900}
+    .b{padding:14px}
+    .videoGrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
     @media (max-width:980px){.videoGrid{grid-template-columns:1fr}}
-    .video-wrap{border-radius:var(--radius);overflow:hidden;border:1px solid rgba(16,24,40,.12);background:rgba(16,24,40,.03);position:relative}
-    .video-wrap img{width:100%;display:block}
-    .video-badge{position:absolute;left:12px;top:12px;display:flex;gap:8px;align-items:center;
-      padding:8px 10px;border-radius:999px;background:rgba(255,255,255,.88);border:1px solid rgba(16,24,40,.10);font-size:12px;color:rgba(16,24,40,.75)}
-    .table{width:100%;border-collapse:collapse;font-size:12px;border-radius:12px;overflow:hidden;border:1px solid rgba(16,24,40,.10)}
-    .table th,.table td{padding:10px 10px;border-bottom:1px solid rgba(16,24,40,.08);text-align:left;vertical-align:top}
-    .table th{background:rgba(47,109,246,.06);color:rgba(16,24,40,.68);font-weight:900}
-    .table tr:last-child td{border-bottom:none}
-    .mono{font-family:var(--mono);font-size:12px;color:rgba(16,24,40,.78)}
-    canvas{width:100%;height:240px;display:block;border-radius:12px;border:1px solid rgba(16,24,40,.12);background:rgba(47,109,246,.03)}
+    .video{position:relative;border:1px solid rgba(16,24,40,.12);border-radius:12px;overflow:hidden;background:#eee}
+    .video img{width:100%;display:block}
+    .badge{position:absolute;left:10px;top:10px;background:rgba(255,255,255,.85);border:1px solid rgba(16,24,40,.12);border-radius:999px;padding:6px 10px;font-size:12px}
+    canvas{width:100%;height:320px;display:block;border:1px solid rgba(16,24,40,.12);border-radius:12px;background:rgba(47,109,246,.03)}
+    table{width:100%;border-collapse:collapse;font-size:12px;border:1px solid rgba(16,24,40,.10);border-radius:12px;overflow:hidden}
+    th,td{padding:10px;border-bottom:1px solid rgba(16,24,40,.08);text-align:left;vertical-align:top}
+    th{background:rgba(47,109,246,.06);font-weight:900;color:rgba(16,24,40,.68)}
+    tr:last-child td{border-bottom:none}
+    .mono{font-family:var(--mono);color:rgba(16,24,40,.78)}
+    .muted{color:var(--muted);font-size:12px;line-height:1.4}
+
+    /* Toast */
+    #toast{
+      display:none;
+      position:fixed; right:16px; bottom:16px; z-index:9999;
+      max-width:420px; padding:12px 14px; border-radius:14px;
+      border:1px solid rgba(16,24,40,0.12); background:rgba(255,255,255,0.95);
+      box-shadow:0 14px 50px rgba(16,24,40,0.18);
+    }
+    #toastTitle{font-weight:900; margin-bottom:4px;}
+    #toastBody{color:rgba(16,24,40,0.70); font-size:12px; line-height:1.35;}
   </style>
+  <link rel="stylesheet" href="/static/layout.css">
 </head>
-<body>
-  <div class="container">
-    <header>
-      <div class="brand">
-        <div class="logo"></div>
-        <div>
-          <h1>NiifYéén — Caméras</h1>
-          <div class="subtitle">Page dédiée aux flux vidéo + événements temps réel</div>
-        </div>
+<body class="camera-page">
+<div class="container">
+  <header>
+    <div>
+      <div style="font-weight:900">NiifYéén — Cheminement + Alerte CIBLE</div>
+      <div class="muted">
+        Flux vidéo et plan illustratif des emplacements des caméras du site.
       </div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:flex-end">
-        <span class="pill"><span id="wsDot" class="dot"></span><span id="wsText">WS: déconnecté</span></span>
-        <a class="btnlink" href="/">Retour</a>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:flex-end">
+      <span class="pill"><span id="wsDot" class="dot"></span><span id="wsText">WS: déconnecté</span></span>
+      <span class="pill" id="targetPill">CIBLE: —</span>
+      <a class="btn" href="/logs">Journal</a>
+      <a class="btn" href="/">Accueil</a>
+    </div>
+  </header>
+
+  <div class="grid">
+    <div class="card">
+      <div class="h">Flux caméras + carte</div>
+      <div class="b">
+        <div id="videos" class="videoGrid"></div>
+
       </div>
-    </header>
+    </div>
 
-    <div class="grid">
-      <div class="card">
-        <div class="card-header">
-          <div class="card-title">Flux caméras</div>
-          <div class="card-desc">Les flux sont servis en MJPEG sur <span class="mono">/video/{cam_id}</span>.</div>
-        </div>
-        <div class="card-body">
-          <div id="videos" class="videoGrid"></div>
+    <div class="card">
+      <div class="h">Live + Historique cheminement</div>
+      <div class="b">
+        <div style="font-weight:900;margin-bottom:8px">Événements live</div>
+        <div class="table-scroll"><table id="tbl">
+          <thead>
+            <tr>
+              <th>cam</th><th>track</th><th>mode</th><th>nom</th><th>tScore</th><th>dbScore</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table></div>
 
-          <div style="height:12px"></div>
+        <div style="height:12px"></div>
 
-          <div class="card-title" style="font-size:13px;">Plan 2D (simple)</div>
-          <div class="card-desc">Rouge = TARGET, Vert = DB, Gris = UNK.</div>
-          <div style="height:10px"></div>
-          <canvas id="map"></canvas>
-        </div>
-      </div>
+        <div style="font-weight:900;margin-bottom:8px">Historique cheminement (target_path)</div>
+        <div class="table-scroll"><table id="pathTbl">
+          <thead>
+            <tr><th>#</th><th>cam</th><th>time</th><th>score</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table></div>
 
-      <div class="card">
-        <div class="card-header">
-          <div class="card-title">Événements live</div>
-          <div class="card-desc">Tracks détectés et leur statut.</div>
-        </div>
-        <div class="card-body">
-          <table class="table" id="eventsTable">
-            <thead>
-              <tr>
-                <th>cam</th><th>track</th><th>mode</th><th>label</th><th>score cible</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-          <div style="margin-top:10px;color:rgba(16,24,40,.62);font-size:12px">
-            Astuce: si tu ajoutes une caméra, mets-la dans <span class="mono">CAMERAS</span> côté backend.
-          </div>
+        <div class="muted" style="margin-top:10px">
+          Alerte déclenchée lors de la première détection de la cible, ou lors d’un handoff vers une autre caméra.
         </div>
       </div>
     </div>
+        <section class="site-plan card" aria-labelledby="sitePlanTitle">
+          <div class="site-plan-heading">
+            <h2 id="sitePlanTitle">Plan du site</h2>
+            <a href="/static/site-plan.svg" target="_blank" rel="noopener" class="btn">Agrandir le plan ↗</a>
+          </div>
+          <figure>
+            <img src="/static/site-plan.svg" width="900" height="510"
+                 alt="Plan illustratif : accueil à gauche, salle centrale, locaux à droite et couloir. Trois emplacements proposés de caméras : entrée, salle et sortie.">
+            <figcaption>Plan à adapter à votre bâtiment. Les repères sont fixes : ils n’indiquent ni une personne ni l’état de connexion des caméras.</figcaption>
+          </figure>
+        </section>
   </div>
+</div>
+
+<!-- Toast alert -->
+<div id="toast">
+  <div id="toastTitle">Alerte</div>
+  <div id="toastBody"></div>
+</div>
 
 <script>
-  // Construire automatiquement la grille vidéo à partir de /api/cameras
-  async function loadVideos(){
-    const res = await fetch("/api/cameras");
-    const j = await res.json();
-    const cams = j.cameras || [];
-    const wrap = document.getElementById("videos");
-    wrap.innerHTML = "";
-
-    cams.forEach(camId => {
-      const div = document.createElement("div");
-      div.className = "video-wrap";
-      div.innerHTML = `
-        <div class="video-badge"><span class="dot ok" style="width:8px;height:8px;box-shadow:none"></span> ${camId}</div>
-        <img src="/video/${camId}" alt="${camId}">
-      `;
-      wrap.appendChild(div);
-    });
-
-    if (cams.length === 0){
-      wrap.innerHTML = "<div style='color:rgba(16,24,40,.62)'>Aucune caméra démarrée.</div>";
-    }
-  }
-  loadVideos();
-
-  // WebSocket + table + map
   const wsDot = document.getElementById("wsDot");
   const wsText = document.getElementById("wsText");
-  const tbody = document.querySelector("#eventsTable tbody");
+  const targetPill = document.getElementById("targetPill");
+  const tbody = document.querySelector("#tbl tbody");
+  const pathBody = document.querySelector("#pathTbl tbody");
+
+
+  // Toast
+  const toastEl = document.getElementById("toast");
+  const toastTitle = document.getElementById("toastTitle");
+  const toastBody = document.getElementById("toastBody");
+  let toastTimer = null;
+
+  function showToast(title, body, ms=3500){
+    toastTitle.textContent = title;
+    toastBody.textContent = body || "";
+    toastEl.style.display = "block";
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toastEl.style.display = "none"; }, ms);
+  }
+
+  // Beep (WebAudio)
+  function beep(freq=880, durationMs=180){
+    try{
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      const a = new AudioCtx();
+      const o = a.createOscillator();
+      const g = a.createGain();
+      o.type = "sine";
+      o.frequency.value = freq;
+      g.gain.value = 0.05;
+      o.connect(g);
+      g.connect(a.destination);
+      o.start();
+      setTimeout(() => { o.stop(); a.close(); }, durationMs);
+    }catch(e){}
+  }
+
+  // ALERT STATE
+  let lastTargetActive = false;
+  let lastTargetCam = null;
+  let lastAlertAt = 0;
+  const ALERT_COOLDOWN_MS = 5000;
+
+  function maybeAlertTarget(t){
+    const now = Date.now();
+    if (!t || !t.active){
+      lastTargetActive = false;
+      lastTargetCam = null;
+      return;
+    }
+
+    const isNew = (!lastTargetActive);
+    const camChanged = (lastTargetCam !== null && t.camera_id && t.camera_id !== lastTargetCam);
+
+    if ((isNew || camChanged) && (now - lastAlertAt) >= ALERT_COOLDOWN_MS){
+      lastAlertAt = now;
+
+      const msg = camChanged
+        ? `Handoff: cible détectée sur ${t.camera_id} | score ${(Number(t.score||0)).toFixed(2)}`
+        : `Cible détectée sur ${t.camera_id} | score ${(Number(t.score||0)).toFixed(2)}`;
+
+      showToast("Alerte CIBLE", msg, 3500);
+      beep(880, 180);
+    }
+
+    lastTargetActive = true;
+    lastTargetCam = t.camera_id || lastTargetCam;
+  }
+
+  // Data state
+  let cameraMeta = {};
+  let target = null;
+  let targetPath = [];
+  let lastEvents = [];
 
   function setWs(ok,msg){
     wsDot.classList.remove("ok","bad");
@@ -146,86 +204,104 @@
     wsText.textContent = msg;
   }
 
+  async function loadVideos(){
+    const res = await fetch("/api/cameras");
+    if (!res.ok) throw new Error("Camera list unavailable");
+    const j = await res.json();
+    const cams = j.cameras || [];
+    cameraMeta = j.camera_meta || {};
+
+    const wrap = document.getElementById("videos");
+    wrap.innerHTML = "";
+    cams.forEach(camId=>{
+      const div = document.createElement("div");
+      div.className = "video";
+      div.innerHTML = `<div class="badge">${camId}</div><img src="/video/${camId}" alt="${camId}">`;
+      wrap.appendChild(div);
+    });
+  }
+  loadVideos().catch(() => {
+    const error = document.createElement("p");
+    error.className = "video-error";
+    error.setAttribute("role", "alert");
+    error.textContent = "Chargement des caméras impossible. Rechargez la page pour réessayer.";
+    document.getElementById("videos").replaceChildren(error);
+  });
+
+  function renderTarget(t){
+    if(!t){ targetPill.textContent = "CIBLE: —"; return; }
+    if(!t.active){ targetPill.textContent = "CIBLE: non vue"; return; }
+    targetPill.textContent = `CIBLE: ${t.camera_id} | track=${t.track_id} | score=${(t.score??0).toFixed(2)}`;
+  }
+
+  function fmt(x){
+    if (x === null || x === undefined) return "";
+    if (typeof x === "number") return x.toFixed(2);
+    return String(x);
+  }
+
   function renderTable(events){
     tbody.innerHTML = "";
-    events.slice(0, 18).forEach(ev => {
+    (events||[]).slice(0, 25).forEach(ev=>{
       const tr = document.createElement("tr");
-      const tscore = (ev.target_score == null) ? "" : Number(ev.target_score).toFixed(2);
       tr.innerHTML = `
-        <td class="mono">${ev.camera_id || ""}</td>
-        <td class="mono">${ev.track_id ?? ""}</td>
-        <td>${ev.mode ?? ""}</td>
+        <td class="mono">${ev.camera_id||""}</td>
+        <td class="mono">${ev.track_id??""}</td>
+        <td>${ev.mode||""}</td>
         <td>${ev.label ?? ""}</td>
-        <td class="mono">${tscore}</td>
+        <td class="mono">${fmt(ev.target_score)}</td>
+        <td class="mono">${fmt(ev.db_score)}</td>
       `;
-      if (ev.mode === "TARGET") tr.style.background = "rgba(240,68,56,0.06)";
+      if(ev.mode==="TARGET") tr.style.background = "rgba(240,68,56,0.06)";
+      if(ev.mode==="DB") tr.style.background = "rgba(18,183,106,0.06)";
       tbody.appendChild(tr);
     });
   }
 
-  // Canvas
-  const canvas = document.getElementById("map");
-  const ctx = canvas.getContext("2d");
-  let lastEvents = [];
-
-  function resizeCanvas(){
-    const r = canvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.floor(r.width * dpr);
-    canvas.height = Math.floor(r.height * dpr);
-    ctx.setTransform(dpr,0,0,dpr,0,0);
-  }
-  window.addEventListener("resize", () => { resizeCanvas(); drawMap(lastEvents); });
-
-  function drawGrid(){
-    const w = canvas.getBoundingClientRect().width;
-    const h = canvas.getBoundingClientRect().height;
-    ctx.clearRect(0,0,w,h);
-    ctx.fillStyle = "rgba(47,109,246,0.03)";
-    ctx.fillRect(0,0,w,h);
-    ctx.strokeStyle = "rgba(16,24,40,0.10)";
-    const step = 40;
-    for (let x=0; x<=w; x+=step){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke(); }
-    for (let y=0; y<=h; y+=step){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke(); }
-    ctx.strokeStyle = "rgba(16,24,40,0.16)";
-    ctx.strokeRect(10,10,w-20,h-20);
-  }
-  function style(ev){
-    if (ev.mode === "TARGET") return {dot:"rgba(240,68,56,0.95)", glow:"rgba(240,68,56,0.18)"};
-    if (ev.mode === "DB") return {dot:"rgba(18,183,106,0.95)", glow:"rgba(18,183,106,0.18)"};
-    return {dot:"rgba(120,120,120,0.85)", glow:"rgba(120,120,120,0.10)"};
-  }
-  function drawMap(events){
-    resizeCanvas(); drawGrid();
-    const w = canvas.getBoundingClientRect().width;
-    const h = canvas.getBoundingClientRect().height;
-    events.forEach(ev => {
-      const x = 10 + (w-20) * (ev.x ?? 0);
-      const y = 10 + (h-20) * (ev.y ?? 0);
-      const s = style(ev);
-      const r = ev.mode === "TARGET" ? 8 : (ev.mode === "DB" ? 7 : 6);
-      ctx.beginPath(); ctx.fillStyle = s.glow; ctx.arc(x,y,r+10,0,Math.PI*2); ctx.fill();
-      ctx.beginPath(); ctx.fillStyle = s.dot; ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+  function renderPath(path){
+    pathBody.innerHTML = "";
+    (path||[]).slice(-40).forEach((p, idx)=>{
+      const tr = document.createElement("tr");
+      const d = new Date((p.ts||0) * 1000);
+      tr.innerHTML = `
+        <td class="mono">${(path.length - Math.min(40, path.length)) + idx + 1}</td>
+        <td class="mono">${p.camera_id}</td>
+        <td class="mono">${isNaN(d.getTime()) ? "" : d.toLocaleTimeString()}</td>
+        <td class="mono">${fmt(p.score)}</td>
+      `;
+      pathBody.appendChild(tr);
     });
   }
 
   function connectWS(){
-    const proto = location.protocol === "https:" ? "wss" : "ws";
+    const proto = location.protocol==="https:" ? "wss":"ws";
     const ws = new WebSocket(`${proto}://${location.host}/ws/live`);
-    ws.onopen = () => setWs(true, "WS: connecté");
-    ws.onmessage = (msg) => {
+
+    ws.onopen = ()=>setWs(true,"WS: connecté");
+
+    ws.onmessage = (msg)=>{
       try{
         const data = JSON.parse(msg.data);
+
         lastEvents = data.events || [];
+        cameraMeta = data.camera_meta || cameraMeta;
+        target = data.target || null;
+        targetPath = data.target_path || [];
+
+        // ALERTE
+        maybeAlertTarget(target);
+
+        renderTarget(target);
         renderTable(lastEvents);
-        drawMap(lastEvents);
+        renderPath(targetPath);
       }catch(e){}
     };
-    ws.onclose = () => { setWs(false, "WS: déconnecté (reconnexion...)"); setTimeout(connectWS, 900); };
-    ws.onerror = () => { setWs(false, "WS: erreur"); try{ ws.close(); }catch(e){} };
+
+    ws.onclose = ()=>{setWs(false,"WS: déconnecté (reconnexion...)"); setTimeout(connectWS,900);};
+    ws.onerror = ()=>{setWs(false,"WS: erreur"); try{ws.close();}catch(e){}};
   }
 
-  resizeCanvas(); drawGrid(); connectWS();
+  connectWS();
 </script>
 </body>
 </html>

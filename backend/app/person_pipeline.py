@@ -7,45 +7,43 @@ import numpy as np
 from ultralytics import YOLO
 
 from .vision import detect_faces_safe, cosine_similarity
-
-
-def face_center_in_person(face_xyxy, person_xyxy):
-    fx1, fy1, fx2, fy2 = face_xyxy
-    px1, py1, px2, py2 = person_xyxy
-    cx = (fx1 + fx2) / 2.0
-    cy = (fy1 + fy2) / 2.0
-    return (px1 <= cx <= px2) and (py1 <= cy <= py2)
+from .reid import GlobalReId
 
 
 class PersonPipeline:
-    """
-    - Détection+tracking PERSONNE (YOLOv8 + ByteTrack/BoT-SORT)
-    - Visage (InsightFace) seulement pour accrocher:
-        * TARGET (cible) via similarité embedding
-        * DB (enrôlés) via similarité embedding
-    - Lock: si visage caché (casquette, main), on garde l’étiquette quelques secondes.
-    """
     def __init__(
         self,
         source: Union[int, str],
         camera_id: str,
+        reid: Optional[GlobalReId] = None,
+
+        capture_size: Tuple[int, int] = (1280, 720),
         out_size: Tuple[int, int] = (640, 360),
-        jpeg_quality: int = 60,
+
+        jpeg_quality: int = 70,
         imgsz: int = 640,
         yolo_conf: float = 0.35,
-        tracker_yaml: str = "bytetrack.yaml",  # plus léger que botsort.yaml
+        tracker_yaml: str = "bytetrack.yaml",
+
+        head_ratio: float = 0.50,
+        recog_every_sec: float = 0.35,
         lock_hold_sec: float = 3.0,
     ):
         self.source = source
         self.camera_id = camera_id
-        self.out_w, self.out_h = out_size
-        self.jpeg_quality = jpeg_quality
+        self.reid = reid
 
-        self.imgsz = imgsz
-        self.yolo_conf = yolo_conf
+        self.cap_w, self.cap_h = capture_size
+        self.out_w, self.out_h = out_size
+
+        self.jpeg_quality = int(jpeg_quality)
+        self.imgsz = int(imgsz)
+        self.yolo_conf = float(yolo_conf)
         self.tracker_yaml = tracker_yaml
 
-        self.lock_hold_sec = lock_hold_sec
+        self.head_ratio = float(head_ratio)
+        self.recog_every_sec = float(recog_every_sec)
+        self.lock_hold_sec = float(lock_hold_sec)
 
         self.running = False
         self.thread: Optional[threading.Thread] = None
@@ -55,38 +53,37 @@ class PersonPipeline:
         self.latest_events: List[Dict[str, Any]] = []
         self.last_frame_ts: float = 0.0
 
-        # Charge YOLO (téléchargement au premier run)
         self.yolo = YOLO("yolov8n.pt")
 
         # DB enrôlée
         self.known = []
         self.db_threshold = 0.35
 
-        # Cible
-        self._lock = threading.Lock()
+        # CIBLE
+        self._tlock = threading.Lock()
         self._target_emb: Optional[np.ndarray] = None
         self._target_label: str = "CIBLE"
         self._target_threshold: float = 0.40
 
-        # état par track_id (lock)
+        # état par track
         self._track_state: Dict[int, Dict[str, Any]] = {}
-        self._state_ttl_sec = 6.0
+        self._state_ttl_sec = 8.0
 
     def set_known(self, known_list):
         self.known = known_list
 
     def set_target(self, emb: np.ndarray, label: str = "CIBLE", threshold: float = 0.40):
-        with self._lock:
+        with self._tlock:
             self._target_emb = emb.astype(np.float32)
             self._target_label = label
             self._target_threshold = float(threshold)
 
     def clear_target(self):
-        with self._lock:
+        with self._tlock:
             self._target_emb = None
 
     def _get_target(self):
-        with self._lock:
+        with self._tlock:
             return self._target_emb, self._target_label, self._target_threshold
 
     def start(self):
@@ -110,23 +107,39 @@ class PersonPipeline:
         img[:] = (245, 245, 245)
         cv2.putText(img, text, (18, self.out_h // 2),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (80, 80, 80), 2)
-        ok, jpg = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+        ok, jpg = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 75])
         if ok:
             self.latest_jpeg = jpg.tobytes()
 
     def _try_open(self) -> bool:
-        backends = [cv2.CAP_DSHOW, cv2.CAP_MSMF, cv2.CAP_ANY]
+        # important: URL MJPEG/RTSP => pas de set(width/height)
+        backends = [cv2.CAP_FFMPEG, cv2.CAP_DSHOW, cv2.CAP_MSMF, cv2.CAP_ANY]
+
         for be in backends:
-            cap = cv2.VideoCapture(self.source, be) if isinstance(self.source, int) else cv2.VideoCapture(self.source)
+            cap = cv2.VideoCapture(self.source, be)
+
             if not cap.isOpened():
                 cap.release()
                 continue
+
+            if not isinstance(self.source, str):
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.cap_w)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.cap_h)
+                try:
+                    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+                except Exception:
+                    pass
+
             ok, frame = cap.read()
             if ok and frame is not None:
+                got_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                got_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                print(f"[{self.camera_id}] OK backend={be} obtenu={got_w}x{got_h} source={self.source}")
                 self.cap = cap
-                print(f"[{self.camera_id}] OK backend={be} frame={frame.shape[1]}x{frame.shape[0]}")
                 return True
+
             cap.release()
+
         print(f"[{self.camera_id}] ÉCHEC ouverture caméra source={self.source}")
         return False
 
@@ -147,6 +160,77 @@ class PersonPipeline:
             return None, best_sim
         return best, best_sim
 
+    @staticmethod
+    def _clamp(v, lo, hi):
+        return max(lo, min(hi, v))
+
+    def _crop_head_from_full(self, frame_full: np.ndarray, box_full_xyxy: Tuple[int, int, int, int]) -> Optional[np.ndarray]:
+        H, W = frame_full.shape[:2]
+        x1, y1, x2, y2 = box_full_xyxy
+
+        x1 = self._clamp(x1, 0, W - 1)
+        x2 = self._clamp(x2, 0, W - 1)
+        y1 = self._clamp(y1, 0, H - 1)
+        y2 = self._clamp(y2, 0, H - 1)
+        if x2 <= x1 or y2 <= y1:
+            return None
+
+        bw = x2 - x1
+        bh = y2 - y1
+        head_h = max(40, int(bh * self.head_ratio))
+
+        pad_x = int(bw * 0.10)
+        pad_y = int(head_h * 0.10)
+
+        hx1 = self._clamp(x1 - pad_x, 0, W - 1)
+        hx2 = self._clamp(x2 + pad_x, 0, W - 1)
+        hy1 = self._clamp(y1 - pad_y, 0, H - 1)
+        hy2 = self._clamp(y1 + head_h + pad_y, 0, H - 1)
+
+        if hx2 <= hx1 or hy2 <= hy1:
+            return None
+
+        return frame_full[hy1:hy2, hx1:hx2]
+
+    def _recognize_from_crop(self, head_crop_bgr: np.ndarray):
+        """
+        Retourne:
+          mode ∈ {TARGET, DB, UNK}
+          label
+          target_score
+          db_score
+          global_id (si embedding visage dispo)
+        """
+        target_emb, target_label, target_thr = self._get_target()
+
+        faces = detect_faces_safe(head_crop_bgr)
+        if not faces:
+            return "UNK", None, None, None, None
+
+        faces = sorted(
+            faces,
+            key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]),
+            reverse=True
+        )
+        face_emb = faces[0].normed_embedding.astype(np.float32)
+
+        gid = self.reid.assign(face_emb) if self.reid is not None else None
+
+        # TARGET
+        if target_emb is not None:
+            tscore = cosine_similarity(face_emb, target_emb)
+            if tscore >= target_thr:
+                return "TARGET", target_label, float(tscore), None, gid
+        else:
+            tscore = None
+
+        # DB
+        best, dbsim = self._best_db_match(face_emb)
+        if best is not None:
+            return "DB", best["nom"], None if tscore is None else float(tscore), float(dbsim), gid
+
+        return "UNK", None, None if tscore is None else float(tscore), float(dbsim), gid
+
     def _loop(self):
         self._placeholder(f"{self.camera_id}: ouverture...")
         while self.running and not self._try_open():
@@ -156,8 +240,8 @@ class PersonPipeline:
             return
 
         while self.running:
-            ok, frame = self.cap.read() if self.cap else (False, None)
-            if not ok or frame is None:
+            ok, frame_full = self.cap.read() if self.cap else (False, None)
+            if not ok or frame_full is None:
                 self._placeholder(f"{self.camera_id}: frame introuvable")
                 time.sleep(0.1)
                 continue
@@ -166,24 +250,18 @@ class PersonPipeline:
             self.last_frame_ts = now
             self._purge_state(now)
 
-            frame_small = cv2.resize(frame, (self.out_w, self.out_h), interpolation=cv2.INTER_AREA)
+            frame_small = cv2.resize(frame_full, (self.out_w, self.out_h), interpolation=cv2.INTER_AREA)
             frame_draw = frame_small.copy()
 
-            # 1) Visages (1 passe)
-            faces = detect_faces_safe(frame_small)
-            face_items = []
-            for f in faces:
-                fb = tuple(map(float, f.bbox))
-                emb = getattr(f, "normed_embedding", None)
-                if emb is not None:
-                    face_items.append((fb, emb))
+            full_h, full_w = frame_full.shape[:2]
+            sx = full_w / float(self.out_w)
+            sy = full_h / float(self.out_h)
 
-            # 2) Personnes + tracking (YOLO.track)
             results = self.yolo.track(
                 frame_small,
                 persist=True,
                 verbose=False,
-                classes=[0],              # person
+                classes=[0],
                 conf=self.yolo_conf,
                 imgsz=self.imgsz,
                 tracker=self.tracker_yaml
@@ -201,84 +279,87 @@ class PersonPipeline:
                 time.sleep(0.005)
                 continue
 
-            xyxy = boxes.xyxy.cpu().numpy()
+            xyxy_small = boxes.xyxy.cpu().numpy()
             tids = boxes.id.cpu().numpy().astype(int)
 
-            target_emb, target_label, target_thr = self._get_target()
-            h, w = frame_small.shape[:2]
-
-            for (pb, tid) in zip(xyxy, tids):
-                x1, y1, x2, y2 = map(float, pb)
-                person_bbox = (x1, y1, x2, y2)
+            for (pb, tid) in zip(xyxy_small, tids):
+                x1s, y1s, x2s, y2s = map(float, pb)
+                tid = int(tid)
 
                 st = self._track_state.setdefault(tid, {})
                 st["last_seen"] = now
 
+                # lock si valable
                 mode = "UNK"
                 label = None
-                target_score = None
-                db_score = None
+                target_score = st.get("last_target_score")
+                db_score = st.get("last_db_score")
+                global_id = st.get("global_id")
 
-                # associer visage à la personne
-                face_emb = None
-                for (fb, emb) in face_items:
-                    if face_center_in_person(fb, person_bbox):
-                        face_emb = emb
-                        break
+                if st.get("locked_until", 0.0) > now:
+                    mode = st.get("locked_mode", "UNK")
+                    label = st.get("locked_label", None)
 
-                if face_emb is not None:
-                    # TARGET prioritaire
-                    if target_emb is not None:
-                        target_score = cosine_similarity(face_emb, target_emb)
-                        if target_score >= target_thr:
-                            mode = "TARGET"
-                            label = target_label
+                # reconnaissance throttled
+                last_recog = st.get("last_recog", 0.0)
+                if (now - last_recog) >= self.recog_every_sec:
+                    st["last_recog"] = now
+
+                    x1f = int(x1s * sx)
+                    y1f = int(y1s * sy)
+                    x2f = int(x2s * sx)
+                    y2f = int(y2s * sy)
+
+                    head_crop = self._crop_head_from_full(frame_full, (x1f, y1f, x2f, y2f))
+                    if head_crop is not None and head_crop.size > 0:
+                        rm, rl, rts, rdb, gid = self._recognize_from_crop(head_crop)
+
+                        if gid is not None:
+                            global_id = gid
+                            st["global_id"] = gid
+
+                        if rm in ("TARGET", "DB"):
+                            mode = rm
+                            label = rl
                             st["locked_mode"] = mode
                             st["locked_label"] = label
                             st["locked_until"] = now + self.lock_hold_sec
 
-                    # DB si pas target
-                    best, sim_db = self._best_db_match(face_emb)
-                    db_score = sim_db
-                    if mode != "TARGET" and best is not None:
-                        mode = "DB"
-                        label = best["nom"]
-                        st["locked_mode"] = mode
-                        st["locked_label"] = label
-                        st["locked_until"] = now + self.lock_hold_sec
+                        if rts is not None:
+                            target_score = rts
+                            st["last_target_score"] = rts
+                        if rdb is not None:
+                            db_score = rdb
+                            st["last_db_score"] = rdb
 
-                # lock si visage caché
-                if face_emb is None and st.get("locked_until", 0) > now:
-                    mode = st.get("locked_mode", "UNK")
-                    label = st.get("locked_label", None)
-
-                # dessin
+                # overlay
                 if mode == "TARGET":
                     color = (0, 0, 255)
-                    text = f"{self.camera_id} | {label} {'' if target_score is None else f'{target_score:.2f}'}"
+                    txt = f"{self.camera_id} | CIBLE {'' if target_score is None else f'{target_score:.2f}'} | gid={global_id or '-'}"
                 elif mode == "DB":
                     color = (0, 180, 0)
-                    text = f"{self.camera_id} | {label} {'' if db_score is None else f'{db_score:.2f}'}"
+                    txt = f"{self.camera_id} | {label} {'' if db_score is None else f'{db_score:.2f}'} | gid={global_id or '-'}"
                 else:
                     color = (120, 120, 120)
-                    text = f"{self.camera_id} | track {tid}"
+                    txt = f"{self.camera_id} | track {tid} | gid={global_id or '-'}"
 
-                cv2.rectangle(frame_draw, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
-                cv2.putText(frame_draw, text, (int(x1), max(18, int(y1) - 8)),
+                cv2.rectangle(frame_draw, (int(x1s), int(y1s)), (int(x2s), int(y2s)), color, 2)
+                cv2.putText(frame_draw, txt, (int(x1s), max(18, int(y1s) - 8)),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
 
-                cx = float((x1 + x2) / 2.0) / float(w)
-                cy = float((y1 + y2) / 2.0) / float(h)
+                cx = float((x1s + x2s) / 2.0) / float(self.out_w)
+                cy = float((y1s + y2s) / 2.0) / float(self.out_h)
 
                 events.append({
                     "camera_id": self.camera_id,
-                    "track_id": int(tid),
+                    "track_id": tid,
+                    "global_id": global_id,
                     "mode": mode,
                     "label": label,
-                    "target_score": None if target_score is None else float(target_score),
-                    "db_score": None if db_score is None else float(db_score),
+                    "target_score": target_score,
+                    "db_score": db_score,
                     "x": cx, "y": cy,
-                    "bbox": [x1, y1, x2, y2],
+                    "bbox": [x1s, y1s, x2s, y2s],
                     "ts": now
                 })
 
