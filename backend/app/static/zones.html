@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="fr" data-theme="dark"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NiifYéén — Lignes et zones</title>
+<script>
+  try { var t = JSON.parse(localStorage.getItem("niifyeen.theme")); if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); } catch (e) {}
+</script>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="app-body">
+<div class="app">
+  <aside id="sidebar" class="sidebar"></aside>
+  <main class="page">
+    <header class="toolbar">
+      <h1>Lignes et zones</h1>
+      <select id="camSelect" aria-label="Caméra"></select>
+      <span class="chip" id="camHealth"></span>
+      <span class="toolbar-spacer"></span>
+      <div class="seg" id="toolSeg" role="group" aria-label="Outil de tracé">
+        <button type="button" data-tool="select" aria-pressed="true">Sélection</button>
+        <button type="button" data-tool="line" aria-pressed="false">Ligne</button>
+        <button type="button" data-tool="zone" aria-pressed="false">Zone</button>
+      </div>
+    </header>
+
+    <div class="page-body">
+      <div class="zones-grid">
+        <section class="card zones-card">
+          <div class="zones-stage" id="stage">
+            <img id="feed" alt="Image de la caméra" draggable="false">
+            <svg id="overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label="Tracés sur l'image de la caméra"></svg>
+          </div>
+          <p class="muted" id="hint"></p>
+          <div class="replay-row">
+            <button class="btn small" id="btnFinish" type="button" hidden>Terminer la zone</button>
+            <button class="btn small" id="btnCancel" type="button" hidden>Annuler le tracé</button>
+          </div>
+        </section>
+
+        <aside class="map-side">
+          <section class="card pad">
+            <h2>Tracés de cette caméra</h2>
+            <div id="list"></div>
+          </section>
+          <section class="card pad" id="editor" hidden>
+            <h2 id="edTitle">Tracé</h2>
+            <form id="edForm" class="form-grid" novalidate>
+              <div class="field wide"><label for="edName">Nom</label><input id="edName" maxlength="40" autocomplete="off"></div>
+              <div class="field" id="fIn"><label for="edIn">Passage « sens 1 »</label><input id="edIn" maxlength="30" placeholder="Entrée" autocomplete="off"></div>
+              <div class="field" id="fOut"><label for="edOut">Passage « sens 2 »</label><input id="edOut" maxlength="30" placeholder="Sortie" autocomplete="off"></div>
+              <div class="field" id="fCap"><label for="edCap">Capacité (alerte au-delà)</label><input id="edCap" type="number" min="1" max="500" placeholder="aucune"></div>
+              <div class="field" id="fDwell"><label for="edDwell">Présence maximale (secondes)</label><input id="edDwell" type="number" min="5" max="86400" placeholder="aucune"></div>
+              <div class="field" id="fRes"><label class="check"><input type="checkbox" id="edRes"><span>Zone interdite (alerte à chaque entrée)</span></label></div>
+              <div class="field wide"><label class="check"><input type="checkbox" id="edOn"><span>Actif</span></label></div>
+              <div class="field wide replay-row"><button class="btn primary" type="submit">Enregistrer</button>
+                <button class="btn danger" type="button" id="edDelete">Supprimer</button></div>
+            </form>
+          </section>
+          <section class="card pad">
+            <h2>Affluence</h2>
+            <div class="field"><label for="period">Période</label>
+              <select id="period"><option value="60">Dernière heure</option><option value="180" selected>3 dernières heures</option>
+                <option value="1440">24 heures</option><option value="10080">7 jours</option></select></div>
+            <table class="data" id="overview"><thead><tr><th scope="col">Tracé</th><th scope="col">Passages / entrées</th><th scope="col">Sorties</th><th scope="col">Pic</th></tr></thead><tbody></tbody></table>
+            <svg id="chart" class="zones-chart" viewBox="0 0 300 100" role="img" aria-label="Affluence par tranche de 5 minutes"></svg>
+            <p class="muted" id="chartInfo"></p>
+          </section>
+        </aside>
+      </div>
+      <p class="muted">Les compteurs sont des estimations obtenues à partir du suivi des personnes : une personne mal suivie peut être comptée deux fois ou manquée.</p>
+    </div>
+  </main>
+</div>
+<script src="/static/shell.js"></script>
+<script src="/static/map-logic.js"></script>
+<script src="/static/zones-logic.js"></script>
+<script src="/static/zones.js"></script>
+</body></html>

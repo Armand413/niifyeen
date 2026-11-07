@@ -1,0 +1,5 @@
+[
+  { "id": "entre",  "source": 0,                                  "label": "Entrée", "x": 0.11, "y": 0.72 },
+  { "id": "salle",  "source": "http://192.168.0.10:8081/video",   "label": "Salle",  "x": 0.63, "y": 0.30 },
+  { "id": "sortie", "source": "http://192.168.0.11:8081/video",   "label": "Sortie", "x": 0.89, "y": 0.72 }
+]

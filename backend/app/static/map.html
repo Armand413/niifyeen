@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="fr" data-theme="dark"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NiifYéén — Carte</title>
+<script>
+  try { var t = JSON.parse(localStorage.getItem("niifyeen.theme")); if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); } catch (e) {}
+</script>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="app-body">
+<div class="app">
+  <aside id="sidebar" class="sidebar"></aside>
+  <main class="page">
+    <header class="toolbar">
+      <h1>Carte</h1>
+      <div class="seg" id="floorTabs" role="tablist" aria-label="Étages"></div>
+      <span class="toolbar-spacer"></span>
+      <span class="chip" id="liveChip"></span>
+      <button class="btn" id="btnEdit" type="button" aria-pressed="false">Modifier le plan</button>
+    </header>
+
+    <div class="page-body">
+      <div class="map-grid">
+        <section class="card map-card">
+          <div class="plan-status is-idle" id="mapStatus" aria-live="polite"></div>
+          <svg id="mapSvg" class="map-svg" role="img" aria-label="Plan du site avec les caméras" preserveAspectRatio="xMidYMid meet"></svg>
+          <p class="muted" id="mapHint"></p>
+        </section>
+
+        <aside class="map-side">
+          <section class="card pad" id="editPanel" hidden>
+            <h2>Édition</h2>
+            <div id="unplacedBox"></div>
+            <div id="camPanel"></div>
+            <h3>Étages</h3>
+            <form id="floorForm" class="form-grid" novalidate>
+              <div class="field"><label for="fName">Nom</label><input id="fName" maxlength="40" autocomplete="off"></div>
+              <div class="field"><label for="fLevel">Niveau</label><input id="fLevel" type="number" min="-10" max="100" value="0"></div>
+              <div class="field wide"><label for="fFile">Plan (PNG, JPEG ou SVG, 6 Mo max)</label><input id="fFile" type="file" accept="image/png,image/jpeg,image/svg+xml,.svg"></div>
+              <div class="field wide"><button class="btn primary" type="submit" id="fSubmit">Ajouter l'étage</button></div>
+            </form>
+            <div id="floorActions"></div>
+          </section>
+
+          <section class="card pad" id="replayPanel">
+            <h2>Rejeu d'un trajet</h2>
+            <div class="field"><label for="rPeriod">Période</label>
+              <select id="rPeriod"><option value="60">Dernière heure</option><option value="240">4 dernières heures</option>
+                <option value="1440" selected>24 dernières heures</option><option value="10080">7 jours</option></select></div>
+            <div class="field"><label for="rPick">Trajet</label><select id="rPick"></select></div>
+            <input type="range" id="rSlider" min="0" max="1000" value="0" aria-label="Position dans le trajet" disabled>
+            <div class="replay-row">
+              <button class="btn small" id="rPlay" type="button" disabled>Lecture</button>
+              <select id="rSpeed" aria-label="Vitesse"><option value="1">×1</option><option value="5" selected>×5</option><option value="20">×20</option><option value="60">×60</option></select>
+              <span class="muted" id="rClock"></span>
+            </div>
+          </section>
+
+          <section class="card pad" id="coveragePanel">
+            <h2>Couverture des caméras</h2>
+            <p class="muted" id="cvInfo"></p>
+            <table class="data" id="cvCams"><thead><tr><th scope="col">Caméra</th><th scope="col">Voit</th><th scope="col">Seule à voir</th></tr></thead><tbody></tbody></table>
+          </section>
+
+          <section class="card pad" id="analysisPanel">
+            <h2>Analyse des déplacements</h2>
+            <p class="muted" id="aInfo"></p>
+            <table class="data" id="aCams"><thead><tr><th scope="col">Caméra</th><th scope="col">Passages</th><th scope="col">Temps cumulé</th></tr></thead><tbody></tbody></table>
+            <table class="data" id="aTrans"><thead><tr><th scope="col">Trajet entre caméras</th><th scope="col">Fois</th></tr></thead><tbody></tbody></table>
+          </section>
+        </aside>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="/static/shell.js"></script>
+<script src="/static/plan.js"></script>
+<script src="/static/map-logic.js"></script>
+<script src="/static/map.js"></script>
+</body></html>

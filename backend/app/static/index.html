@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="fr" data-theme="dark"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NiifYéén — Cibles et personnes</title>
+<script>
+  try { var t = JSON.parse(localStorage.getItem("niifyeen.theme")); if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); } catch (e) {}
+</script>
+<link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="/static/legacy.css">
+</head>
+<body class="app-body">
+<div class="app">
+  <aside id="sidebar" class="sidebar"></aside>
+  <main class="page">
+    <header class="toolbar">
+      <h1>Cibles et personnes</h1>
+      <span class="muted">Enrôlement et recherche multi-photos (définit une cible)</span>
+    </header>
+    <div class="page-body legacy">
+  <div class="grid">
+    <!-- ENROLL -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Enrôlement</div>
+        <div class="card-desc">Ajoute une personne en base (utile pour le mode DB quand le visage est visible).</div>
+      </div>
+      <div class="card-body">
+        <form id="enrollForm">
+          <div class="row">
+            <div>
+              <label>Nom</label>
+              <input name="nom" type="text" placeholder="Ex: Awa Diop" required>
+            </div>
+            <div>
+              <label>Infos (optionnel)</label>
+              <input name="infos" type="text" placeholder="Ex: équipe / rôle / note">
+            </div>
+          </div>
+
+          <div style="margin-top:12px;">
+            <label>Photos (plusieurs)</label>
+            <input id="enrollFiles" type="file" name="photos" accept="image/*" multiple required>
+            <div id="enrollPreviews" class="previews"></div>
+            <div class="hint">Conseil : 3 à 10 photos, angles/lumières variés.</div>
+          </div>
+
+          <div style="margin-top:12px;">
+            <label style="display:flex;gap:8px;align-items:flex-start;font-weight:400;">
+              <input type="checkbox" name="consentement" value="true" required style="margin-top:3px;">
+              <span>La personne a donné son consentement à l'enregistrement de son empreinte faciale.
+              Les photos ne sont pas conservées : seule une empreinte numérique l'est, jusqu'à suppression de la personne ci-dessous.</span>
+            </label>
+          </div>
+
+          <div class="actions">
+            <button type="button" id="clearEnroll">Effacer</button>
+            <button type="submit" class="btn-primary">Enrôler</button>
+          </div>
+        </form>
+
+        <div id="enrollResult" class="result mono" style="display:none;"></div>
+      </div>
+    </div>
+
+    <!-- SEARCH TARGET -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Cibles recherchées</div>
+        <div class="card-desc">Chaque envoi ajoute une cible (plusieurs photos de la même personne la rendent plus stable). Les cibles déjà définies sont conservées. À visualiser sur /cameras.</div>
+      </div>
+      <div class="card-body">
+        <fieldset class="target-panel" aria-label="Choisir une personne enrôlée comme cible">
+          <legend>Suivre une personne déjà enrôlée</legend>
+          <div class="actions">
+            <select id="tpPick" aria-label="Personne enrôlée"><option value="">Choisir une personne…</option></select>
+            <button type="button" id="tpAdd" class="btn-primary">Ajouter comme cible</button>
+          </div>
+          <div class="hint">Aucune photo n'est nécessaire : les empreintes de référence de la fiche sont utilisées.</div>
+        </fieldset>
+        <fieldset class="target-panel" aria-label="Capacité et session">
+          <legend>Capacité et session</legend>
+          <div class="actions">
+            <label>Cibles simultanées (max)
+              <input id="tpMax" type="number" min="1" max="32" step="1" value="8"></label>
+            <button type="button" id="tpApply">Appliquer</button>
+          </div>
+          <div class="actions">
+            <button type="button" id="tpSave">Sauvegarder la session</button>
+            <button type="button" id="tpResume" disabled>Reprendre la session</button>
+            <button type="button" id="tpForget" class="btn-danger" disabled>Oublier</button>
+          </div>
+          <div id="tpSession" class="hint"></div>
+          <div class="hint">Seules les personnes enrôlées sont sauvegardées (leurs identifiants, jamais d'empreinte). Une cible envoyée par photo n'est pas reprise.</div>
+          <div id="tpStatus" class="hint" aria-live="polite"></div>
+        </fieldset>
+        <form id="searchForm">
+          <label>Photos de la nouvelle cible (plusieurs, de la même personne)</label>
+          <input id="searchFiles" type="file" name="photos" accept="image/*" multiple required>
+          <div id="searchPreviews" class="previews"></div>
+
+          <div class="actions">
+            <button type="button" id="clearSearch">Effacer</button>
+            <button type="button" id="clearTarget" class="btn-danger">Retirer toutes les cibles</button>
+            <button type="submit" class="btn-primary">Ajouter la cible</button>
+          </div>
+        </form>
+
+        <div id="searchResult" class="result mono" style="display:none;"></div>
+        <div id="targetsBox" aria-live="polite"></div>
+        <div class="hint">
+          Après “Ajouter la cible”, ouvre <a href="/cameras">/cameras</a> pour voir les modes TARGET/DB/UNK en direct.
+        </div>
+      </div>
+    </div>
+
+    <!-- PARTICIPANTS -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Personnes enrôlées</div>
+        <div class="card-desc">Supprimer une personne efface son empreinte et retire son nom du journal.</div>
+      </div>
+      <div class="card-body">
+        <div id="participantsList" class="mono"></div>
+        <div id="participantsStatus" class="hint"></div>
+      </div>
+    </div>
+  </div>
+    </div>
+  </main>
+</div>
+<script src="/static/shell.js"></script>
+<script>Shell.mount({ active: "home" });</script>
+<script src="/static/profile.js"></script>
+<script src="/static/targets-view.js"></script>
+<script src="/static/targets-panel.js"></script>
+<script>
+  function setJson(el, obj){ el.style.display="block"; el.textContent = JSON.stringify(obj, null, 2); }
+  function clearPreviews(c){ c.replaceChildren(); }
+  function fileToThumb(file){
+    const div = document.createElement("div");
+    div.className = "thumb";
+    const img = document.createElement("img");
+    div.appendChild(img);
+    const url = URL.createObjectURL(file);
+    img.src = url;
+    img.onload = () => URL.revokeObjectURL(url);
+    return div;
+  }
+
+  // ENROLL previews
+  const enrollFiles = document.getElementById("enrollFiles");
+  const enrollPreviews = document.getElementById("enrollPreviews");
+  const enrollResult = document.getElementById("enrollResult");
+
+  enrollFiles.addEventListener("change", () => {
+    clearPreviews(enrollPreviews);
+    [...enrollFiles.files].slice(0, 12).forEach(f => enrollPreviews.appendChild(fileToThumb(f)));
+  });
+
+  document.getElementById("clearEnroll").addEventListener("click", () => {
+    document.getElementById("enrollForm").reset();
+    clearPreviews(enrollPreviews);
+    enrollResult.style.display = "none";
+  });
+
+  document.getElementById("enrollForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    enrollResult.style.display = "none";
+    const fd = new FormData(e.target);
+    const res = await fetch("/participants/enroll", { method:"POST", body: fd });
+    setJson(enrollResult, await res.json());
+    if (res.ok) loadParticipants();
+  });
+
+  // PARTICIPANTS (liste + suppression)
+  const participantsList = document.getElementById("participantsList");
+  const participantsStatus = document.getElementById("participantsStatus");
+
+  async function loadParticipants(){
+    try{
+      const res = await fetch("/participants");
+      if (!res.ok) throw new Error();
+      const items = await res.json();
+      participantsList.replaceChildren();
+      participantsStatus.textContent = items.length ? "" : "Aucune personne enrôlée.";
+      items.forEach(p => {
+        const row = document.createElement("div");
+        row.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 0;";
+        const name = document.createElement("span");
+        const link = document.createElement("a");
+        link.href = "/people/" + p.id; link.textContent = `#${p.id} — ${p.display_name || p.nom}` + (p.actif === false ? " (désactivée)" : "");
+        name.appendChild(link);
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "btn-danger";
+        btn.textContent = "Supprimer";
+        btn.addEventListener("click", async () => {
+          if (!confirm(`Supprimer ${p.display_name || p.nom} ? Son empreinte sera effacée définitivement.`)) return;
+          const r = await fetch(`/participants/${p.id}`, { method: "DELETE" });
+          if (!r.ok) { participantsStatus.textContent = "Suppression impossible."; return; }
+          loadParticipants();
+        });
+        row.append(name, btn);
+        participantsList.appendChild(row);
+      });
+    }catch(err){
+      participantsStatus.textContent = "Liste indisponible.";
+    }
+  }
+  loadParticipants();
+
+  // SEARCH previews (multi)
+  const searchFiles = document.getElementById("searchFiles");
+  const searchPreviews = document.getElementById("searchPreviews");
+  const searchResult = document.getElementById("searchResult");
+  const targetsBox = document.getElementById("targetsBox");
+
+  function showSearchMessage(text){ searchResult.style.display = "block"; searchResult.textContent = text; }
+
+  // Liste des cibles (conservée d'un ajout à l'autre : ajouter une cible n'efface pas les précédentes).
+  async function loadTargets(){
+    try{
+      const res = await fetch("/targets");
+      if (!res.ok) throw new Error();
+      TargetsView.render(targetsBox, await res.json(), { openProfiles: true, live: false, onRemove: removeTarget });
+    }catch(e){ targetsBox.textContent = "Liste des cibles indisponible."; }
+  }
+  async function removeTarget(t){
+    if (!confirm("Retirer " + t.label + " ?")) return;
+    await fetch("/targets/" + encodeURIComponent(t.id), { method: "DELETE" });
+    showSearchMessage(t.label + " retirée.");
+    loadTargets();
+  }
+  loadTargets();
+  TargetsPanel.init({ pick: "tpPick", add: "tpAdd", max: "tpMax", apply: "tpApply", save: "tpSave", resume: "tpResume",
+                      forget: "tpForget", status: "tpStatus", session: "tpSession" }, loadTargets);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) loadTargets(); });
+
+  searchFiles.addEventListener("change", () => {
+    clearPreviews(searchPreviews);
+    [...searchFiles.files].slice(0, 12).forEach(f => searchPreviews.appendChild(fileToThumb(f)));
+  });
+
+  document.getElementById("clearSearch").addEventListener("click", () => {
+    document.getElementById("searchForm").reset();
+    clearPreviews(searchPreviews);
+    searchResult.style.display = "none";
+  });
+
+  document.getElementById("clearTarget").addEventListener("click", async () => {
+    if (!confirm("Retirer toutes les cibles ?")) return;
+    await fetch("/target/clear", { method: "POST" });
+    showSearchMessage("Toutes les cibles ont été retirées.");
+    loadTargets();
+  });
+
+  document.getElementById("searchForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    searchResult.style.display = "none";
+    const fd = new FormData(e.target);
+    const res = await fetch("/search/by-image", { method:"POST", body: fd });
+    const j = await res.json();
+    if (!res.ok) { showSearchMessage(typeof j.detail === "string" ? j.detail : "Ajout impossible."); return; }
+    if (!j.target_set) {
+      showSearchMessage("Aucun visage exploitable dans les photos envoyées : aucune cible ajoutée.");
+      return;
+    }
+    // La photo ajoutée apparaît dans la liste ci-dessous : on vide le formulaire pour en ajouter une autre.
+    e.target.reset();
+    clearPreviews(searchPreviews);
+    showSearchMessage(j.target.label + " ajoutée à partir de " + j.nb_photos_utilisees + " photo(s) — " +
+                      j.targets_count + " cible(s) suivie(s).");
+    loadTargets();
+  });
+</script>
+</body>
+</html>

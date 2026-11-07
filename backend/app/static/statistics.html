@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="fr" data-theme="dark"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NiifYéén — Statistiques</title>
+<script>
+  try { var t = JSON.parse(localStorage.getItem("niifyeen.theme")); if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); } catch (e) {}
+</script>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="app-body">
+<div class="app">
+  <aside id="sidebar" class="sidebar"></aside>
+  <main class="page">
+    <header class="toolbar">
+      <h1>Statistiques</h1>
+      <div class="seg" id="period" role="group" aria-label="Période"></div>
+      <select id="camera" aria-label="Caméra"><option value="">Toutes les caméras</option></select>
+      <a class="btn small" id="csv" href="#" download>Exporter (CSV)</a>
+    </header>
+
+    <div class="page-body">
+      <p class="notice">Données <b>anonymes</b> : uniquement des totaux. Aucun nom, aucune fiche, aucune image. Une <b>observation</b> est une ligne de détection ; un <b>passage</b> est une personne visible sans interruption sur une caméra ; une <b>personne unique</b> n'existe que pour les personnes enrôlées (les inconnus ne sont pas dédoublonnés).</p>
+
+      <section class="card pad">
+        <h2>Vue d'ensemble</h2>
+        <div class="stat-grid" id="kpis"></div>
+        <p class="muted" id="kpiNote"></p>
+        <table class="table" id="camTable"><thead><tr><th>Caméra</th><th class="num">Observations</th><th class="num">Passages</th><th class="num">Personnes enrôlées</th><th class="num">Durée moyenne</th></tr></thead><tbody id="camRows"></tbody></table>
+        <div class="empty" id="camEmpty" hidden>Aucune détection sur cette période.</div>
+      </section>
+
+      <div class="alerts-grid">
+        <div>
+          <section class="card pad">
+            <h2>Passages par heure de la journée</h2>
+            <svg id="hourChart" class="stat-chart" viewBox="0 0 480 140" role="img" aria-label="Passages par heure"></svg>
+          </section>
+          <section class="card pad">
+            <h2>Semaine type (passages)</h2>
+            <div class="week-wrap"><table class="week" id="week"></table></div>
+          </section>
+          <section class="card pad">
+            <h2>Comparaison avec la période précédente</h2>
+            <p class="muted" id="cmpRange"></p>
+            <table class="table" id="cmpTable"><thead><tr><th>Mesure</th><th class="num">Période</th><th class="num">Référence</th><th class="num">Écart</th></tr></thead><tbody id="cmpRows"></tbody></table>
+            <p class="muted" id="cmpNote"></p>
+          </section>
+        </div>
+        <aside>
+          <section class="card pad">
+            <h2>Carte de chaleur</h2>
+            <div class="field"><label for="heatCam">Caméra</label><select id="heatCam"></select></div>
+            <canvas id="heat" class="heat-canvas" width="480" height="270" role="img" aria-label="Carte de chaleur des positions"></canvas>
+            <p class="muted" id="heatInfo"></p>
+          </section>
+          <section class="card pad">
+            <h2>Transitions entre caméras</h2>
+            <div class="field"><label for="gap">Délai maximal entre deux caméras</label>
+              <select id="gap"><option value="120">2 min</option><option value="600" selected>10 min</option><option value="1800">30 min</option></select></div>
+            <svg id="graph" class="stat-chart" viewBox="0 0 360 260" role="img" aria-label="Graphe des transitions"></svg>
+            <ul class="list-plain" id="edges"></ul>
+            <p class="muted" id="graphNote"></p>
+          </section>
+          <section class="card pad">
+            <h2>Lignes et zones</h2>
+            <table class="table"><thead><tr><th>Nom</th><th class="num">Entrées</th><th class="num">Sorties</th><th class="num">Max</th></tr></thead><tbody id="zoneRows"></tbody></table>
+            <div class="empty" id="zoneEmpty" hidden>Aucune ligne ni zone.</div>
+          </section>
+        </aside>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="/static/shell.js"></script>
+<script src="/static/statistics-logic.js"></script>
+<script src="/static/statistics.js"></script>
+</body></html>

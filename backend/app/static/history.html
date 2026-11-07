@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="fr" data-theme="dark"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NiifYéén — Historique des détections</title>
+<script>
+  try { var t = JSON.parse(localStorage.getItem("niifyeen.theme")); if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); } catch (e) {}
+</script>
+<link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="/static/legacy.css">
+</head>
+<body class="app-body">
+<div class="app">
+  <aside id="sidebar" class="sidebar"></aside>
+  <main class="page">
+    <header class="toolbar">
+      <h1>Historique des détections</h1>
+      <span class="muted">Passages devant les caméras, durée, type et identité, avec export.</span>
+    </header>
+    <div class="page-body legacy">
+<section class="panel" aria-labelledby="fTitle">
+<h2 id="fTitle">Filtres</h2>
+<form id="filters" class="filters">
+<label>Période<select id="period">
+<option value="10">10 dernières minutes</option><option value="60" selected>Dernière heure</option>
+<option value="240">4 dernières heures</option><option value="1440">24 dernières heures</option>
+<option value="10080">7 derniers jours</option><option value="43200">30 derniers jours</option>
+<option value="custom">Période personnalisée…</option></select></label>
+<label class="custom hidden">Du<input type="datetime-local" id="start"></label>
+<label class="custom hidden">Au<input type="datetime-local" id="end"></label>
+<label>Caméra<select id="camera"><option value="">Toutes les caméras</option></select></label>
+<label>Type<select id="mode"><option value="">Tous</option><option value="TARGET">Cible</option>
+<option value="DB">Personne enrôlée</option><option value="UNK">Inconnu</option></select></label>
+<label id="labelBox">Identité<input type="text" id="label" maxlength="100" placeholder="Nom contenant…" autocomplete="off"></label>
+<button type="submit" id="refresh">Actualiser</button>
+<label class="check"><input type="checkbox" id="auto"> Actualisation automatique (10 s)</label>
+<a class="btn" id="export" href="#" download>Exporter en CSV</a>
+</form>
+<p id="personFilter" class="note hidden"><span id="personFilterText"></span> <button type="button" id="personFilterClear" class="btn small">Retirer ce filtre</button></p>
+<p class="note">Une <b>observation</b> est un enregistrement de la base (environ toutes les 0,8 s par personne visible).
+Un <b>passage</b> regroupe les observations d'une même piste sur une même caméra ; une pause de plus de
+<span id="gap">10</span> s commence un nouveau passage. Son type est le plus fort rencontré : cible, puis personne enrôlée, puis inconnu.
+Heures affichées selon le fuseau de votre navigateur.</p>
+<p id="status" class="status" role="status" aria-live="polite"></p>
+</section>
+
+<section class="panel" aria-labelledby="sTitle">
+<h2 id="sTitle">Synthèse</h2>
+<div class="cards" id="cards"></div>
+<svg id="chart" class="chart" viewBox="0 0 900 170" role="img" aria-label="Activité au cours de la période"></svg>
+<p class="note" id="chartNote"></p>
+<div class="table-scroll" style="max-height:none"><table><thead><tr><th scope="col">Caméra</th><th scope="col">Passages</th><th scope="col">Cible</th><th scope="col">Enrôlées</th><th scope="col">Inconnus</th></tr></thead><tbody id="cams"></tbody></table></div>
+</section>
+
+<section class="panel" aria-labelledby="pTitle">
+<h2 id="pTitle">Passages</h2>
+<div class="table-scroll"><table><thead><tr>
+<th scope="col">Début</th><th scope="col">Durée</th><th scope="col">Caméra</th><th scope="col">Type</th>
+<th scope="col" class="identity">Identité</th><th scope="col">Observations</th><th scope="col">Score max</th></tr></thead>
+<tbody id="rows"></tbody></table></div>
+<div class="pagination"><button id="previous" disabled>← Précédent</button><span id="page">Page 1</span><button id="next" disabled>Suivant →</button></div>
+</section>
+
+<section class="panel" aria-labelledby="tTitle">
+<h2 id="tTitle">Trajets des cibles</h2>
+<p class="note">Chaque cible enregistre sa première identification puis chaque changement de caméra. Choisir un ou plusieurs trajets pour les revoir sur le plan, chacun dans sa couleur.</p>
+<div class="two">
+<div><p id="trajStatus" class="status" role="status" aria-live="polite"></p><ul id="trajList" class="traj-list"></ul></div>
+<figure style="margin:0"><div class="plan-stage">
+<img src="/static/site-plan.svg" width="900" height="510" alt="Plan illustratif du site">
+<svg id="planOverlay" class="plan-overlay" viewBox="0 0 900 510" aria-hidden="true" focusable="false"></svg></div>
+<figcaption class="note" id="planCaption">Aucun trajet sélectionné.</figcaption></figure>
+</div></section>
+    </div>
+  </main>
+</div>
+<script src="/static/shell.js"></script>
+<script>Shell.mount({ active: "history" });</script>
+<script src="/static/plan.js"></script>
+<script src="/static/history.js"></script>
+</body></html>

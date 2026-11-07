@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="fr" data-theme="dark"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NiifYéén — Plan et cheminement</title>
+<script>
+  try { var t = JSON.parse(localStorage.getItem("niifyeen.theme")); if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); } catch (e) {}
+</script>
+<link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="/static/legacy.css">
+</head>
+<body class="app-body">
+<div class="app">
+  <aside id="sidebar" class="sidebar"></aside>
+  <main class="page">
+    <header class="toolbar">
+      <h1>Plan et cheminement</h1>
+      <span class="pill"><span id="wsDot" class="dot"></span><span id="wsText">WS: déconnecté</span></span>
+      <span class="pill" id="targetPill">CIBLES: —</span>
+    </header>
+    <div class="page-body legacy cams">
+  <div class="grid">
+    <div class="card">
+      <div class="h">Flux caméras + carte</div>
+      <div class="b">
+        <div id="videos" class="videoGrid"></div>
+
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="h">Live + Historique cheminement</div>
+      <div class="b">
+        <div style="font-weight:900;margin-bottom:2px">Cibles</div>
+        <div id="targetsBox" aria-live="polite"></div>
+        <div style="height:14px"></div>
+        <div style="font-weight:900;margin-bottom:8px">Événements live</div>
+        <div class="table-scroll"><table id="tbl">
+          <thead>
+            <tr>
+              <th>cam</th><th>track</th><th>mode</th><th>nom</th><th>tScore</th><th>dbScore</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table></div>
+
+        <div style="height:12px"></div>
+
+        <div style="font-weight:900;margin-bottom:8px">Historique cheminement des cibles</div>
+        <div class="table-scroll"><table id="pathTbl">
+          <thead>
+            <tr><th>cible</th><th>#</th><th>cam</th><th>time</th><th>score</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table></div>
+
+        <div class="muted" style="margin-top:10px">
+          Alerte déclenchée lors de la première détection d’une cible, ou lors d’un handoff vers une autre caméra.
+        </div>
+      </div>
+    </div>
+        <section class="site-plan card" aria-labelledby="sitePlanTitle">
+          <div class="site-plan-heading">
+            <h2 id="sitePlanTitle">Plan du site — position et trajet des cibles</h2>
+          </div>
+          <p id="planStatus" class="plan-status is-idle" role="status" aria-live="polite">Aucune cible repérée pour l'instant.</p>
+          <figure>
+            <div class="plan-stage">
+              <img src="/static/site-plan.svg" width="900" height="510"
+                   alt="Plan illustratif du site : accueil à gauche, salle centrale, locaux à droite et couloir.">
+              <svg id="planOverlay" class="plan-overlay" viewBox="0 0 900 510" aria-hidden="true" focusable="false"></svg>
+            </div>
+            <figcaption>
+              <span class="legend-dot legend-cam"></span> caméra
+              <span class="legend-dot legend-target"></span> caméra où la cible est identifiée
+              <span class="legend-arrow">➜</span> trajet (les pastilles numérotent les passages dans l'ordre ; survoler une flèche donne l'heure).
+              Plan schématique, sans échelle : les flèches relient les caméras en ligne droite, pas le vrai chemin parcouru.
+            </figcaption>
+          </figure>
+        </section>
+  </div>
+
+<!-- Toast alert -->
+<div id="toast">
+  <div id="toastTitle">Alerte</div>
+  <div id="toastBody"></div>
+</div>
+    </div>
+  </main>
+</div>
+<script src="/static/shell.js"></script>
+<script>Shell.mount({ active: "cameras" });</script>
+<script src="/static/plan.js"></script>
+<script src="/static/profile.js"></script>
+<script src="/static/targets-view.js"></script>
+<script>
+  const wsDot = document.getElementById("wsDot");
+  const wsText = document.getElementById("wsText");
+  const targetPill = document.getElementById("targetPill");
+  const tbody = document.querySelector("#tbl tbody");
+  const pathBody = document.querySelector("#pathTbl tbody");
+
+
+  // Toast
+  const toastEl = document.getElementById("toast");
+  const toastTitle = document.getElementById("toastTitle");
+  const toastBody = document.getElementById("toastBody");
+  let toastTimer = null;
+
+  function showToast(title, body, ms=3500){
+    toastTitle.textContent = title;
+    toastBody.textContent = body || "";
+    toastEl.style.display = "block";
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toastEl.style.display = "none"; }, ms);
+  }
+
+  // Beep (WebAudio)
+  function beep(freq=880, durationMs=180){
+    try{
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      const a = new AudioCtx();
+      const o = a.createOscillator();
+      const g = a.createGain();
+      o.type = "sine";
+      o.frequency.value = freq;
+      g.gain.value = 0.05;
+      o.connect(g);
+      g.connect(a.destination);
+      o.start();
+      setTimeout(() => { o.stop(); a.close(); }, durationMs);
+    }catch(e){}
+  }
+
+  // ALERT STATE (par cible)
+  const alertState = new Map();          // id -> { active, cam, at }
+  const ALERT_COOLDOWN_MS = 5000;
+
+  function maybeAlertTargets(list){
+    const now = Date.now();
+    const present = new Set();
+    (list || []).forEach(t => {
+      present.add(t.id);
+      const prev = alertState.get(t.id) || { active:false, cam:null, at:0 };
+      if (!t.active){
+        alertState.set(t.id, { active:false, cam:null, at:prev.at });
+        return;
+      }
+      const isNew = !prev.active;
+      const camChanged = (prev.cam !== null && t.camera_id && t.camera_id !== prev.cam);
+      let at = prev.at;
+      if ((isNew || camChanged) && (now - prev.at) >= ALERT_COOLDOWN_MS){
+        at = now;
+        const where = (cameraMeta[t.camera_id] && cameraMeta[t.camera_id].label) || t.camera_id;
+        const score = Number(t.score||0).toFixed(2);
+        showToast(`Alerte ${t.label}`, camChanged ? `Handoff : ${t.label} détectée sur ${where} | score ${score}`
+                                                  : `${t.label} détectée sur ${where} | score ${score}`, 3500);
+        beep(880, 180);
+      }
+      alertState.set(t.id, { active:true, cam:t.camera_id || prev.cam, at });
+    });
+    for (const id of [...alertState.keys()]) if (!present.has(id)) alertState.delete(id);   // cible retirée
+  }
+
+  // Data state
+  let cameraMeta = {};
+  let targets = [];          // état en direct de chaque cible (WebSocket)
+  let lastEvents = [];
+
+  const planOverlay = document.getElementById("planOverlay");
+  const planStatus = document.getElementById("planStatus");
+  function renderPlan(){
+    try{ SitePlan.render(planOverlay, planStatus, cameraMeta, targets); }
+    catch(e){ console.error("Plan : affichage impossible", e); }
+  }
+
+  // Liste des cibles (photo, fiche) : rechargée seulement quand une cible est ajoutée ou retirée.
+  const targetsBox = document.getElementById("targetsBox");
+  let targetsVersion = undefined;
+  async function removeTarget(t){
+    if(!confirm("Retirer " + t.label + " ?")) return;
+    await fetch("/targets/" + encodeURIComponent(t.id), { method: "DELETE" });
+  }
+  async function loadTargets(){
+    try{
+      const res = await fetch("/targets");
+      if(res.ok){
+        TargetsView.render(targetsBox, await res.json(), { onRemove: removeTarget });
+        TargetsView.updateLive(targetsBox, targets, cameraMeta);
+      }
+    }catch(e){ console.error("Liste des cibles indisponible", e); }
+  }
+  function syncTargets(version){
+    if(version !== targetsVersion){ targetsVersion = version; loadTargets(); }
+  }
+
+  function setWs(ok,msg){
+    wsDot.classList.remove("ok","bad");
+    wsDot.classList.add(ok ? "ok" : "bad");
+    wsText.textContent = msg;
+    if (window.Shell) Shell.setLink(ok, msg);
+  }
+
+  async function loadVideos(){
+    const res = await fetch("/api/cameras");
+    if (!res.ok) throw new Error("Camera list unavailable");
+    const j = await res.json();
+    const cams = j.cameras || [];
+    cameraMeta = j.camera_meta || {};
+    renderPlan();
+
+    const wrap = document.getElementById("videos");
+    wrap.replaceChildren();
+    cams.forEach(camId=>{
+      const div = document.createElement("div");
+      div.className = "video";
+      const badge = document.createElement("div");
+      badge.className = "badge";
+      badge.textContent = camId;
+      const img = document.createElement("img");
+      img.src = "/video/" + encodeURIComponent(camId);
+      img.alt = camId;
+      div.append(badge, img);
+      wrap.appendChild(div);
+    });
+  }
+  loadVideos().catch(() => {
+    const error = document.createElement("p");
+    error.className = "video-error";
+    error.setAttribute("role", "alert");
+    error.textContent = "Chargement des caméras impossible. Rechargez la page pour réessayer.";
+    document.getElementById("videos").replaceChildren(error);
+  });
+
+  function renderTargets(list){
+    const seen = list.filter(t => t.active).length;
+    targetPill.textContent = list.length ? `CIBLES: ${list.length} (${seen} vue${seen>1?"s":""})` : "CIBLES: —";
+  }
+
+  function fmt(x){
+    if (x === null || x === undefined) return "";
+    if (typeof x === "number") return x.toFixed(2);
+    return String(x);
+  }
+
+  // Construit une ligne de tableau avec textContent : aucune donnée n'est interprétée comme du HTML.
+  function makeRow(cells){
+    const tr = document.createElement("tr");
+    cells.forEach(([value, cls])=>{
+      const td = document.createElement("td");
+      if (cls) td.className = cls;
+      td.textContent = value;
+      tr.appendChild(td);
+    });
+    return tr;
+  }
+
+  function renderTable(events){
+    tbody.replaceChildren();
+    (events||[]).slice(0, 25).forEach(ev=>{
+      const tr = makeRow([
+        [ev.camera_id || "", "mono"],
+        [ev.track_id ?? "", "mono"],
+        [ev.mode || ""],
+        [ev.label ?? ""],
+        [fmt(ev.target_score), "mono"],
+        [fmt(ev.db_score), "mono"],
+      ]);
+      if(ev.mode==="TARGET") tr.style.background = "rgba(240,68,56,0.06)";
+      if(ev.mode==="DB") tr.style.background = "rgba(18,183,106,0.06)";
+      tbody.appendChild(tr);
+    });
+  }
+
+  function renderPath(list){
+    pathBody.replaceChildren();
+    const rows = [];
+    list.forEach(t => {
+      let n = 0, last = null;
+      (t.path||[]).forEach(p => {
+        if (p.camera_id === last) return;
+        last = p.camera_id; n++;
+        rows.push({ t, n, p });
+      });
+    });
+    rows.sort((a,b) => (a.p.ts||0) - (b.p.ts||0));
+    rows.slice(-40).forEach(r => {
+      const d = new Date((r.p.ts||0) * 1000);
+      const tr = makeRow([
+        [r.t.label],
+        [r.n, "mono"],
+        [(cameraMeta[r.p.camera_id] && cameraMeta[r.p.camera_id].label) || r.p.camera_id, "mono"],
+        [isNaN(d.getTime()) ? "" : d.toLocaleTimeString(), "mono"],
+        [fmt(r.p.score), "mono"],
+      ]);
+      tr.firstChild.style.borderLeft = "4px solid " + (/^#[0-9a-f]{6}$/i.test(r.t.color) ? r.t.color : "#d92d20");
+      pathBody.appendChild(tr);
+    });
+  }
+
+  function connectWS(){
+    const proto = location.protocol==="https:" ? "wss":"ws";
+    const ws = new WebSocket(`${proto}://${location.host}/ws/live`);
+
+    ws.onopen = ()=>setWs(true,"WS: connecté");
+
+    ws.onmessage = (msg)=>{
+      try{
+        const data = JSON.parse(msg.data);
+
+        lastEvents = data.events || [];
+        cameraMeta = data.camera_meta || cameraMeta;
+        targets = data.targets || [];
+
+        // ALERTE (par cible)
+        maybeAlertTargets(targets);
+
+        renderTargets(targets);
+        renderTable(lastEvents);
+        renderPath(targets);
+        renderPlan();
+        syncTargets(data.targets_version);
+        TargetsView.updateLive(targetsBox, targets, cameraMeta);
+      }catch(e){}
+    };
+
+    ws.onclose = ()=>{setWs(false,"WS: déconnecté (reconnexion...)"); setTimeout(connectWS,900);};
+    ws.onerror = ()=>{setWs(false,"WS: erreur"); try{ws.close();}catch(e){}};
+  }
+
+  connectWS();
+</script>
+</body>
+</html>

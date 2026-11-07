@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="fr" data-theme="dark"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NiifYéén — Alertes</title>
+<script>
+  try { var t = JSON.parse(localStorage.getItem("niifyeen.theme")); if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); } catch (e) {}
+</script>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="app-body">
+<div class="app">
+  <aside id="sidebar" class="sidebar"></aside>
+  <main class="page">
+    <header class="toolbar">
+      <h1>Centre d'alertes</h1>
+      <div class="seg" id="statusSeg" role="group" aria-label="État">
+        <button type="button" data-status="open" aria-pressed="true">Ouvertes <span class="tab-count" id="cOpen"></span></button>
+        <button type="button" data-status="new" aria-pressed="false">Nouvelles <span class="tab-count" id="cNew"></span></button>
+        <button type="button" data-status="acknowledged" aria-pressed="false">Acquittées <span class="tab-count" id="cAck"></span></button>
+        <button type="button" data-status="closed" aria-pressed="false">Clôturées <span class="tab-count" id="cClosed"></span></button>
+        <button type="button" data-status="" aria-pressed="false">Toutes</button>
+      </div>
+      <span class="toolbar-spacer"></span>
+      <button class="btn" id="btnSound" type="button" aria-pressed="true" title="Son à l'arrivée d'une alerte"></button>
+    </header>
+
+    <div class="page-body">
+      <section class="card pad alerts-filters">
+        <div class="form-grid alerts-filter-grid">
+          <div class="field"><label for="fQ">Recherche</label><input id="fQ" type="search" maxlength="100" placeholder="Texte, caméra, type…" autocomplete="off"></div>
+          <div class="field"><label for="fPriority">Priorité</label><select id="fPriority"><option value="">Toutes</option>
+            <option value="critical">Critique</option><option value="high">Haute</option><option value="medium">Moyenne</option><option value="low">Faible</option></select></div>
+          <div class="field"><label for="fCategory">Catégorie</label><select id="fCategory"><option value="">Toutes</option></select></div>
+          <div class="field"><label for="fCamera">Caméra</label><select id="fCamera"><option value="">Toutes</option></select></div>
+          <div class="field"><label for="fSince">Depuis</label><input id="fSince" type="datetime-local"></div>
+          <div class="field"><label for="fUntil">Jusqu'à</label><input id="fUntil" type="datetime-local"></div>
+        </div>
+      </section>
+
+      <div class="alerts-grid">
+        <section class="card pad">
+          <div class="replay-row">
+            <span class="muted" id="selInfo"></span>
+            <span class="toolbar-spacer"></span>
+            <button class="btn small" id="bulkSeen" type="button" disabled>Marquer consultées</button>
+            <button class="btn small" id="bulkAck" type="button" disabled>Acquitter</button>
+            <button class="btn small" id="bulkClose" type="button" disabled>Clôturer</button>
+          </div>
+          <div class="table-wrap">
+            <table class="data" id="table">
+              <thead><tr><th scope="col"><input type="checkbox" id="selAll" aria-label="Tout sélectionner"></th><th scope="col">Priorité</th>
+                <th scope="col">Alerte</th><th scope="col">Caméra</th><th scope="col">Dernière</th><th scope="col">État</th></tr></thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+          <div class="empty" id="empty" hidden>Aucune alerte pour ces filtres.</div>
+          <div class="pager-row"><span class="muted" id="listInfo"></span><button class="btn small" id="btnMore" type="button" hidden>Plus anciennes</button></div>
+        </section>
+
+        <aside class="map-side">
+          <section class="card pad" id="detail" hidden>
+            <h2 id="dTitle">Alerte</h2>
+            <p id="dMeta" class="muted"></p>
+            <p id="dText"></p>
+            <div class="replay-row" id="dActions"></div>
+            <div class="field"><label for="dNote">Ajouter une note</label>
+              <input id="dNote" maxlength="500" placeholder="Ce qui a été fait, constaté…" autocomplete="off"></div>
+            <div class="replay-row"><button class="btn small" id="dNoteBtn" type="button">Enregistrer la note</button></div>
+            <h3 class="section-title">Historique</h3>
+            <ul class="list-plain" id="dHistory"></ul>
+            <h3 class="section-title" id="dNotifTitle" hidden>Notifications externes</h3>
+            <p class="muted" id="dNotif"></p>
+          </section>
+          <section class="card pad" id="noDetail"><p class="muted">Sélectionnez une alerte pour voir son détail et son historique.</p></section>
+
+          <section class="card pad">
+            <h2>Règles</h2>
+            <p class="muted">Choisissez ce qui devient une alerte, sa priorité, et le délai pendant lequel des événements identiques sont regroupés en une seule alerte.</p>
+            <div class="table-wrap">
+              <table class="data" id="rules">
+                <thead><tr><th scope="col">Événement</th><th scope="col">Actif</th><th scope="col">Priorité</th><th scope="col">Regroupement (s)</th><th scope="col">Son</th><th scope="col">Externe</th></tr></thead>
+                <tbody id="rulesBody"></tbody>
+              </table>
+            </div>
+            <div class="replay-row"><button class="btn primary" id="rulesSave" type="button">Enregistrer les règles</button></div>
+          </section>
+
+          <section class="card pad">
+            <h2>Notifications externes</h2>
+            <p class="muted" id="chInfo"></p>
+            <div class="replay-row">
+              <button class="btn small" id="testEmail" type="button" disabled>Essai e-mail</button>
+              <button class="btn small" id="testTelegram" type="button" disabled>Essai Telegram</button>
+            </div>
+            <p class="muted" id="chResult"></p>
+          </section>
+        </aside>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="/static/shell.js"></script>
+<script src="/static/alerts-logic.js"></script>
+<script src="/static/alerts.js"></script>
+</body></html>

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="fr" data-theme="dark"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NiifYéén — Personnes</title>
+<script>
+  try { var t = JSON.parse(localStorage.getItem("niifyeen.theme")); if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); } catch (e) {}
+</script>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="app-body">
+<div class="app">
+  <aside id="sidebar" class="sidebar"></aside>
+  <main class="page">
+    <header class="toolbar">
+      <h1>Personnes</h1>
+      <div class="chips"><span class="chip" id="chipTotal"></span></div>
+      <span class="toolbar-spacer"></span>
+      <input type="search" id="search" placeholder="Nom, prénom ou matricule" aria-label="Rechercher une personne" autocomplete="off" maxlength="100">
+      <select id="statut" aria-label="Filtrer par statut">
+        <option value="">Tous les statuts</option><option value="actif">Actives</option><option value="inactif">Désactivées</option>
+      </select>
+      <button class="btn primary" id="btnAdd" type="button"></button>
+    </header>
+
+    <div class="page-body">
+      <div id="blocked" class="notice danger" hidden></div>
+      <div class="split" id="splitView">
+        <section class="card">
+          <div class="table-wrap">
+            <table class="data">
+              <thead><tr><th scope="col">Personne</th><th scope="col">Statut</th><th scope="col">Réf.</th><th scope="col">Dernière détection</th></tr></thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+          <p class="muted" id="emptyMsg" hidden></p>
+          <div class="pager-row"><button class="btn small" id="prev" type="button">← Précédent</button><span id="pageLabel"></span><button class="btn small" id="next" type="button">Suivant →</button></div>
+        </section>
+
+        <section class="card fiche" id="fiche" aria-live="polite"></section>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal" id="modal" hidden>
+  <form class="modal-card" id="form" role="dialog" aria-modal="true" aria-labelledby="modalTitle" novalidate>
+    <div class="modal-head"><h2 id="modalTitle">Ajouter une personne</h2><button type="button" class="btn small" id="btnClose" aria-label="Fermer">✕</button></div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="field" data-f="nom"><label for="aNom">Nom *</label><input id="aNom" maxlength="100" autocomplete="off"><span class="error"></span></div>
+        <div class="field" data-f="prenom"><label for="aPrenom">Prénom</label><input id="aPrenom" maxlength="60" autocomplete="off"><span class="error"></span></div>
+        <div class="field" data-f="matricule"><label for="aMatricule">Référence / matricule</label><input id="aMatricule" maxlength="40" autocomplete="off"><span class="hint">Facultatif ; unique.</span><span class="error"></span></div>
+        <div class="field"><label for="aActif">Statut</label><select id="aActif"><option value="true">Active</option><option value="false">Désactivée</option></select></div>
+        <div class="field wide" data-f="infos"><label for="aInfos">Informations</label><textarea id="aInfos" maxlength="500"></textarea><span class="error"></span></div>
+        <div class="field wide" data-f="photos"><label for="aPhotos">Photographies de référence * (1 à 10)</label><input id="aPhotos" type="file" accept="image/*" multiple>
+          <div class="thumbs" id="aThumbs"></div>
+          <span class="hint">Plusieurs angles et éclairages améliorent la reconnaissance. Les photos ne sont pas conservées : seules des empreintes faciales le sont.</span><span class="error"></span></div>
+        <div class="field wide" data-f="consentement"><label class="check"><input type="checkbox" id="aConsent"><span>La personne a donné son consentement à l'enregistrement de son empreinte faciale. *</span></label><span class="error"></span></div>
+      </div>
+      <div id="dupBox" class="notice" hidden>
+        <b id="dupText"></b>
+        <label class="check"><input type="checkbox" id="dupConfirm"><span>C'est bien une autre personne : enrôler quand même.</span></label>
+      </div>
+      <p class="error" id="formError" role="alert" hidden></p>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn" id="btnCancel">Annuler</button>
+      <button type="submit" class="btn primary" id="btnSave">Enrôler la personne</button>
+    </div>
+  </form>
+</div>
+
+<script src="/static/shell.js"></script>
+<script src="/static/people.js"></script>
+</body></html>

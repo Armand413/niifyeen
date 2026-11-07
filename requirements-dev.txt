@@ -1,0 +1,9 @@
+# Suffisant pour lancer les tests (les modèles lourds sont simulés).
+fastapi>=0.110
+python-multipart>=0.0.9
+sqlalchemy>=2.0
+numpy>=1.26
+opencv-python-headless>=4.9
+# Client de test de Starlette : httpx2 pour les versions récentes, httpx pour les anciennes.
+httpx2
+httpx>=0.27

@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="fr" data-theme="dark"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NiifYéén — Gestion des caméras</title>
+<script>
+  try { var t = JSON.parse(localStorage.getItem("niifyeen.theme")); if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); } catch (e) {}
+</script>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="app-body">
+<div class="app">
+  <aside id="sidebar" class="sidebar"></aside>
+  <main class="page">
+    <header class="toolbar">
+      <h1>Gestion des caméras</h1>
+      <div class="chips"><span class="chip" id="chipCount"></span><span class="chip" id="chipOnline"></span></div>
+      <span class="toolbar-spacer"></span>
+      <button class="btn" id="btnWebcams" type="button"></button>
+      <button class="btn" id="btnOnvif" type="button"></button>
+      <button class="btn primary" id="btnAdd" type="button"></button>
+    </header>
+
+    <div class="page-body">
+      <section class="card" id="foundCard" hidden aria-live="polite">
+        <h2 id="foundTitle">Appareils détectés</h2>
+        <div id="foundList" class="found-list"></div>
+        <p class="muted" id="foundNote"></p>
+      </section>
+
+      <section class="card">
+        <div class="table-wrap">
+          <table class="data">
+            <thead><tr>
+              <th scope="col">Caméra</th><th scope="col">Zone</th><th scope="col">Type</th><th scope="col">Source</th>
+              <th scope="col">État</th><th scope="col">Images/s</th><th scope="col">Latence</th><th scope="col">Résolution</th>
+              <th scope="col">Actions</th>
+            </tr></thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+        <p class="muted" id="emptyMsg" hidden>Aucune caméra. Cliquez sur « Ajouter une caméra ».</p>
+        <p class="muted">Les changements sont appliqués immédiatement, sans redémarrer le serveur ; seule la caméra modifiée est relancée,
+          et uniquement si sa source, sa résolution, sa cadence ou son activation change. Les jetons et mots de passe ne sont jamais réaffichés.</p>
+      </section>
+    </div>
+  </main>
+</div>
+
+<div class="modal" id="modal" hidden>
+  <form class="modal-card" id="form" role="dialog" aria-modal="true" aria-labelledby="modalTitle" novalidate>
+    <div class="modal-head"><h2 id="modalTitle">Ajouter une caméra</h2><button type="button" class="btn small" id="btnClose" aria-label="Fermer">✕</button></div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="field wide"><label for="fType">Type de caméra</label>
+          <select id="fType">
+            <option value="webcam">Webcam USB de ce serveur</option>
+            <option value="pc">Caméra d'un autre ordinateur (NiifYéén camera_server)</option>
+            <option value="http">Flux MJPEG / HTTP</option>
+            <option value="rtsp">Caméra IP (RTSP)</option>
+          </select></div>
+        <div class="field" data-f="label"><label for="fLabel">Nom *</label><input id="fLabel" maxlength="40" autocomplete="off"><span class="error"></span></div>
+        <div class="field" data-f="location"><label for="fLocation">Zone du bâtiment</label><input id="fLocation" maxlength="80" autocomplete="off" placeholder="Hall, étage 2…"><span class="error"></span></div>
+
+        <div class="field wide" id="currentSource" hidden><span class="hint" id="currentSourceText"></span></div>
+
+        <div class="field" data-g="webcam" data-f="source"><label for="fIndex">Numéro de la webcam</label><input id="fIndex" type="number" min="0" max="31" value="0"><span class="hint">0 = la première webcam du serveur.</span><span class="error"></span></div>
+
+        <div class="field" data-g="pc"><label for="fHost">Adresse IP de l'ordinateur</label><input id="fHost" autocomplete="off" placeholder="192.168.1.31"></div>
+        <div class="field" data-g="pc"><label for="fPort">Port</label><input id="fPort" type="number" min="1" max="65535" value="8081"></div>
+        <div class="field wide" data-g="pc" data-f="source"><label for="fToken">Jeton (facultatif)</label><input id="fToken" autocomplete="off"><span class="hint">Le même que <code>--token</code> du script, s'il en utilise un.</span><span class="error"></span></div>
+
+        <div class="field wide" data-g="url" data-f="source"><label for="fUrl" id="fUrlLabel">Adresse du flux</label><input id="fUrl" autocomplete="off" spellcheck="false"><span class="hint" id="fUrlHint"></span><span class="error"></span></div>
+      </div>
+
+      <details class="advanced">
+        <summary>Réglages avancés</summary>
+        <div class="form-grid">
+          <div class="field" data-f="capture_width"><label for="fCapW">Largeur demandée à la webcam</label><input id="fCapW" type="number" min="160" max="7680" placeholder="1280"><span class="error"></span></div>
+          <div class="field" data-f="capture_height"><label for="fCapH">Hauteur demandée</label><input id="fCapH" type="number" min="120" max="4320" placeholder="720"><span class="error"></span></div>
+          <div class="field" data-f="process_fps"><label for="fFps">Cadence de traitement maximale (images/s)</label><input id="fFps" type="number" min="0.5" max="60" step="0.5" placeholder="sans limite"><span class="hint">Une cadence plus basse économise le processeur.</span><span class="error"></span></div>
+          <div class="field"><label for="fEnabled">État</label><select id="fEnabled"><option value="1">Activée</option><option value="0">Désactivée</option></select></div>
+          <div class="field" data-f="x"><label for="fX">Position sur le plan : horizontale (0 à 1)</label><input id="fX" type="number" min="0" max="1" step="0.01" placeholder="automatique"><span class="error"></span></div>
+          <div class="field" data-f="y"><label for="fY">Position sur le plan : verticale (0 à 1)</label><input id="fY" type="number" min="0" max="1" step="0.01" placeholder="automatique"><span class="error"></span></div>
+        </div>
+      </details>
+
+      <div id="testBox" class="result-box" hidden aria-live="polite"></div>
+      <p class="error" id="formError" role="alert" hidden></p>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn" id="btnTest"></button>
+      <button type="button" class="btn" id="btnCancel">Annuler</button>
+      <button type="submit" class="btn primary" id="btnSave">Enregistrer</button>
+    </div>
+  </form>
+</div>
+
+<script src="/static/shell.js"></script>
+<script src="/static/cameras-admin.js"></script>
+</body></html>

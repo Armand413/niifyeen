@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="fr" data-theme="dark"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NiifYéén — Centre de supervision</title>
+<script>
+  /* Applique le thème choisi avant l'affichage (évite un flash blanc). */
+  try { var t = JSON.parse(localStorage.getItem("niifyeen.theme")); if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); } catch (e) {}
+</script>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="app-body">
+<div class="app">
+  <aside id="sidebar" class="sidebar"></aside>
+
+  <main class="sv">
+    <header class="toolbar">
+      <h1>Centre de supervision</h1>
+      <div class="chips" aria-label="Indicateurs">
+        <span class="chip" id="chipCams" title="Caméras en ligne"></span>
+        <span class="chip" id="chipPeople" title="Personnes détectées sur l'ensemble des flux"></span>
+        <span class="chip" id="chipTargets" title="Cibles actuellement détectées"></span>
+        <span class="chip" id="chipAlerts" title="Caméras hors ligne"></span>
+      </div>
+      <span class="toolbar-spacer"></span>
+      <div class="pager" id="pager" hidden>
+        <button class="btn" id="pagePrev" type="button" aria-label="Page précédente"></button>
+        <span id="pageLabel">1 / 1</span>
+        <button class="btn" id="pageNext" type="button" aria-label="Page suivante"></button>
+      </div>
+      <div class="seg" id="layoutSeg" role="group" aria-label="Disposition des caméras"></div>
+      <button class="btn" id="annotBtn" type="button" aria-pressed="true" title="Afficher ou masquer les cadres et noms sur les vidéos (A)"></button>
+      <button class="btn" id="soundBtn" type="button" aria-pressed="false" title="Son lors des événements importants"></button>
+      <button class="btn" id="monitorBtn" type="button" aria-pressed="false" title="Mode moniteur : grille plein écran, sans menus (M)"></button>
+      <button class="btn" id="fullBtn" type="button" title="Plein écran (F)"></button>
+    </header>
+
+    <section class="sv-main">
+      <div class="grid-wrap">
+        <div id="grid" class="grid" aria-live="off"></div>
+        <div id="empty" class="empty" hidden>Aucune caméra configurée. Ajoutez des caméras dans <code>cameras.json</code> puis redémarrez le serveur.</div>
+      </div>
+
+      <aside class="panel" aria-label="Informations">
+        <div class="tabs" role="tablist">
+          <button role="tab" id="tabEvents" aria-selected="true" aria-controls="paneEvents" type="button">Événements<span class="tab-count" id="countEvents">0</span></button>
+          <button role="tab" id="tabCamera" aria-selected="false" aria-controls="paneCamera" type="button">Caméra</button>
+          <button role="tab" id="tabTargets" aria-selected="false" aria-controls="paneTargets" type="button">Cibles<span class="tab-count" id="countTargets">0</span></button>
+        </div>
+
+        <section class="pane active" id="paneEvents" role="tabpanel" aria-labelledby="tabEvents">
+          <div class="filter-row" id="filterRow" role="group" aria-label="Filtrer les événements"></div>
+          <ul class="feed" id="feed"></ul>
+          <p class="muted" id="feedEmpty">Aucun événement pour le moment.</p>
+        </section>
+
+        <section class="pane" id="paneCamera" role="tabpanel" aria-labelledby="tabCamera">
+          <div id="cameraDetails"><p class="muted">Cliquez sur une caméra pour voir ses informations.</p></div>
+        </section>
+
+        <section class="pane" id="paneTargets" role="tabpanel" aria-labelledby="tabTargets">
+          <div id="targetsList"></div>
+          <p class="muted"><a href="/">Gérer les cibles et les personnes</a> · <a href="/cameras">Voir le plan</a></p>
+        </section>
+      </aside>
+    </section>
+  </main>
+</div>
+<script src="/static/shell.js"></script>
+<script src="/static/supervision.js"></script>
+</body></html>

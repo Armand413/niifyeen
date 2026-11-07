@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="fr" data-theme="dark"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NiifYéén — Investigation</title>
+<script>
+  try { var t = JSON.parse(localStorage.getItem("niifyeen.theme")); if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); } catch (e) {}
+</script>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="app-body">
+<div class="app">
+  <aside id="sidebar" class="sidebar"></aside>
+  <main class="page">
+    <header class="toolbar">
+      <h1>Investigation</h1>
+      <span class="chip" id="summary"></span>
+      <span class="toolbar-spacer"></span>
+      <a class="btn" id="btnCsv" href="#" download>Exporter en CSV</a>
+      <a class="btn" id="btnPdf" href="#" download>Rapport PDF</a>
+    </header>
+
+    <div class="page-body">
+      <section class="card pad">
+        <div class="form-grid alerts-filter-grid">
+          <div class="field"><label for="fPeriod">Période</label><select id="fPeriod">
+            <option value="10">10 dernières minutes</option><option value="60" selected>Dernière heure</option>
+            <option value="240">4 dernières heures</option><option value="1440">24 heures</option>
+            <option value="10080">7 jours</option><option value="43200">30 jours</option>
+            <option value="custom">Dates précises…</option></select></div>
+          <div class="field" id="fFromBox" hidden><label for="fFrom">Du</label><input id="fFrom" type="datetime-local"></div>
+          <div class="field" id="fToBox" hidden><label for="fTo">Au</label><input id="fTo" type="datetime-local"></div>
+          <div class="field"><label for="fCamera">Caméra</label><select id="fCamera"><option value="">Toutes</option></select></div>
+          <div class="field"><label for="fPerson">Personne enrôlée</label><select id="fPerson"><option value="">Toutes</option></select></div>
+          <div class="field"><label for="fSession">Session de cible</label><select id="fSession"><option value="">Aucune</option></select></div>
+          <div class="field"><label for="fQ">Texte</label><input id="fQ" type="search" maxlength="100" placeholder="Dans la description…" autocomplete="off"></div>
+        </div>
+        <div class="filter-row" id="chips" role="group" aria-label="Types d'éléments"></div>
+        <label class="check"><input type="checkbox" id="fAlerts"><span>Seulement les événements qui ont donné une alerte</span></label>
+        <p class="muted" id="fHint"></p>
+      </section>
+
+      <section class="card pad">
+        <h2>Chronologie</h2>
+        <svg id="tl" class="inv-timeline" role="img" aria-label="Chronologie des éléments par caméra"></svg>
+        <p class="muted" id="tlInfo"></p>
+      </section>
+
+      <div class="alerts-grid">
+        <section class="card pad">
+          <div class="replay-row"><span class="muted" id="selInfo"></span><span class="toolbar-spacer"></span>
+            <button class="btn small" id="btnAddMany" type="button" disabled>Ajouter la sélection au dossier</button></div>
+          <div class="table-wrap">
+            <table class="data" id="table">
+              <thead><tr><th scope="col"><input type="checkbox" id="selAll" aria-label="Tout sélectionner"></th><th scope="col">Heure</th>
+                <th scope="col">Nature</th><th scope="col">Description</th><th scope="col">Caméra</th><th scope="col">Alerte</th></tr></thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+          <div class="empty" id="empty" hidden>Aucun résultat pour ces filtres.</div>
+        </section>
+
+        <aside class="map-side">
+          <section class="card pad" id="detail" hidden>
+            <h2 id="dTitle">Détail</h2>
+            <p id="dMeta" class="muted"></p>
+            <svg id="dPlan" class="inv-plan" viewBox="0 0 900 510" role="img" aria-label="Position de la caméra sur le plan"></svg>
+            <p class="muted" id="dPlanInfo"></p>
+            <p class="notice" id="dVideo"></p>
+            <a class="btn small" id="dVideoLink" href="#" hidden>Voir l'extrait vidéo</a>
+            <div id="dAlerts"></div>
+            <h3 class="section-title">Dans la minute autour (même caméra)</h3>
+            <ul class="list-plain" id="dContext"></ul>
+            <div class="replay-row"><button class="btn small primary" id="dAdd" type="button">Ajouter au dossier</button></div>
+          </section>
+          <section class="card pad" id="noDetail"><p class="muted">Cliquez sur un événement pour voir son détail, son plan et ses alertes. Un passage ou une étape de cible n'a pas de fiche : ce sont des observations regroupées.</p></section>
+
+          <section class="card pad">
+            <h2>Dossier d'événement</h2>
+            <div class="field"><label for="dossierSel">Dossier</label><select id="dossierSel"><option value="">— aucun —</option></select></div>
+            <div class="replay-row">
+              <input id="dossierNew" maxlength="120" placeholder="Titre d'un nouveau dossier" aria-label="Titre du nouveau dossier">
+              <button class="btn small" id="dossierCreate" type="button">Créer</button>
+            </div>
+            <div id="dossierBox" hidden>
+              <div class="field"><label for="dossierNote">Note du dossier</label><input id="dossierNote" maxlength="2000" autocomplete="off"></div>
+              <ul class="list-plain" id="dossierItems"></ul>
+              <div class="replay-row">
+                <button class="btn small" id="dossierSave" type="button">Enregistrer la note</button>
+                <a class="btn small primary" id="dossierPdf" href="#" download>Rapport PDF</a>
+                <button class="btn small danger" id="dossierDelete" type="button">Supprimer le dossier</button>
+              </div>
+            </div>
+          </section>
+        </aside>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="/static/shell.js"></script>
+<script src="/static/map-logic.js"></script>
+<script src="/static/plan.js"></script>
+<script src="/static/recordings-logic.js"></script>
+<script src="/static/investigation-logic.js"></script>
+<script src="/static/investigation.js"></script>
+</body></html>

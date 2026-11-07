@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="fr" data-theme="dark"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NiifYéén — Journal agrégé</title>
+<script>
+  try { var t = JSON.parse(localStorage.getItem("niifyeen.theme")); if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); } catch (e) {}
+</script>
+<link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="/static/legacy.css">
+</head>
+<body class="app-body">
+<div class="app">
+  <aside id="sidebar" class="sidebar"></aside>
+  <main class="page">
+    <header class="toolbar">
+      <h1>Journal agrégé</h1>
+      <span class="muted">Observations enregistrées par caméra et par minute.</span>
+    </header>
+    <div class="page-body legacy">
+<section class="panel"><form id="filters" class="filters">
+<label>Caméra<select id="camera"><option value="">Toutes les caméras</option></select></label>
+<label>Période<select id="period"><option value="10">10 dernières minutes</option><option value="60" selected>Dernière heure</option><option value="240">4 dernières heures</option><option value="1440">24 dernières heures</option><option value="10080">7 derniers jours</option></select></label>
+<button id="refresh" type="submit">Actualiser</button></form>
+<p class="note">Une observation est un enregistrement, pas une personne unique. Ce journal agrégé n’affiche ni identité ni parcours individuel. Heures affichées selon le fuseau de votre navigateur.</p>
+<p id="status" class="status" role="status" aria-live="polite"></p>
+<div class="table-scroll"><table><thead><tr><th scope="col">Date et minute</th><th scope="col">Caméra</th><th scope="col">Observations</th></tr></thead><tbody id="rows"></tbody></table></div>
+<div class="pagination"><button id="previous" disabled>← Précédent</button><span id="page">Page 1</span><button id="next" disabled>Suivant →</button></div>
+</section>
+    </div>
+  </main>
+</div>
+<script src="/static/shell.js"></script>
+<script>Shell.mount({ active: "logs" });</script>
+<script>
+const $=id=>document.getElementById(id);
+let page=1,total=0,busy=false;
+function paging(){const pages=Math.max(1,Math.ceil(total/50));$('page').textContent=`Page ${page} / ${pages}`;$('previous').disabled=busy||page<=1;$('next').disabled=busy||page>=pages;}
+async function load(){if(busy)return;busy=true;$('refresh').disabled=true;$('camera').disabled=true;$('period').disabled=true;paging();$('status').className='status';$('status').textContent='Chargement…';$('rows').replaceChildren();try{
+const params=new URLSearchParams({minutes:$('period').value,camera_id:$('camera').value,page,page_size:50});
+const response=await fetch('/api/logs/activity?'+params);if(!response.ok)throw Error('HTTP '+response.status);const data=await response.json();total=data.total;
+if(!data.items.length){const tr=$('rows').insertRow();const td=tr.insertCell();td.colSpan=3;td.textContent='Aucune observation pour ces filtres.';}
+for(const row of data.items){const tr=$('rows').insertRow();tr.insertCell().textContent=new Date(row.minute).toLocaleString();tr.insertCell().textContent=row.camera_id;const count=tr.insertCell();count.className='number';count.textContent=row.observations;}
+$('status').textContent=`${total} groupe(s) caméra / minute · actualisé à ${new Date().toLocaleTimeString()}`;
+}catch(error){total=0;$('status').className='status error';$('status').textContent='Journal indisponible. Vérifiez que le serveur est démarré puis cliquez sur Actualiser.';}finally{busy=false;$('refresh').disabled=false;$('camera').disabled=false;$('period').disabled=false;paging();}}
+$('filters').onsubmit=event=>{event.preventDefault();page=1;load();};
+for(const id of ['camera','period'])$(id).onchange=()=>{page=1;load();};
+$('previous').onclick=()=>{page--;load();};$('next').onclick=()=>{page++;load();};
+async function init(){try{const response=await fetch('/api/cameras');if(!response.ok)throw Error();const data=await response.json();for(const id of data.cameras){const option=document.createElement('option');option.value=id;option.textContent=id;$('camera').append(option);}}catch{const note=document.createElement('p');note.className='note';note.textContent='Liste des caméras indisponible : consultation de toutes les caméras.';$('filters').after(note);}load();}init();
+</script></body></html>
