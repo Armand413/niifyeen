@@ -16,15 +16,13 @@
     targets: ["target_seen", "target_moved", "target_lost"],
     people: ["person_recognized", "person_inactive_seen"],
     cameras: ["camera_offline", "camera_online", "camera_added", "camera_removed", "camera_enabled", "camera_disabled",
-              "camera_obstructed", "camera_cleared", "camera_frozen"],
-    analytics: ["line_crossed", "zone_overcrowded", "zone_cleared", "zone_intrusion", "zone_loitering"]
+              "camera_obstructed", "camera_cleared", "camera_frozen"]
   };
   var EVENT_ICON = { target_seen: "target", target_moved: "route", target_lost: "target",
                      person_recognized: "user", person_inactive_seen: "user", camera_offline: "camera", camera_online: "camera",
                      camera_added: "camera", camera_removed: "camera", camera_enabled: "camera", camera_disabled: "camera",
-                     camera_obstructed: "camera", camera_cleared: "camera", camera_frozen: "camera",
-                     line_crossed: "route", zone_overcrowded: "users", zone_cleared: "users", zone_intrusion: "target", zone_loitering: "users" };
-  var FILTERS = [["", "Tout"], ["targets", "Cibles"], ["people", "Personnes"], ["cameras", "Caméras"], ["analytics", "Zones"]];
+                     camera_obstructed: "camera", camera_cleared: "camera", camera_frozen: "camera" };
+  var FILTERS = [["", "Tout"], ["targets", "Cibles"], ["people", "Personnes"], ["cameras", "Caméras"]];
   var MAX_EVENTS = 200;
 
   var prefs = Shell.prefs;

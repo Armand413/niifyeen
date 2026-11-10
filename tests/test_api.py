@@ -64,13 +64,18 @@ class ApiTests(unittest.TestCase):
         return self.client.post("/participants/enroll", data=form, files=files)
 
     # ---- caméras & pages ----------------------------------------------
+    def test_pages_and_scripts_are_revalidated_by_the_browser(self):
+        for path in ("/", "/cameras", "/static/shell.js", "/static/plan.js"):
+            with self.subTest(path=path):
+                self.assertEqual(self.client.get(path).headers.get("cache-control"), "no-cache")
+
     def test_cameras_and_meta_use_the_same_ids(self):
         j = self.client.get("/api/cameras").json()
         self.assertEqual(j["cameras"], ["entre", "salle"])
         self.assertEqual(set(j["camera_meta"]), set(j["cameras"]))
 
     def test_pages_are_served(self):
-        for path in ("/", "/cameras", "/logs"):
+        for path in ("/", "/cameras"):
             self.assertEqual(self.client.get(path).status_code, 200)
 
     def test_unknown_camera_is_404(self):

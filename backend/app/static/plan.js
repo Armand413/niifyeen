@@ -13,7 +13,9 @@
   var W = 900, H = 510;          // taille du plan courant ; ``render`` accepte ``opts.width`` / ``opts.height``
   var TEAL = "#186b82", AMBER = "#b54708";
   var MAX_MOVES = 20;          // nombre maximal de déplacements dessinés par cible
-  var CAM_R = 19;              // rayon du pictogramme de caméra
+  var CAM_R = 19;              // rayon du pictogramme de caméra (agrandi avec le plan)
+  var K = 1;                   // facteur d'échelle : plans plus larges que 900 px
+  var base = null;             // plan réel chargé par loadBase : {width, height, floor_id}
   var FONT = "Segoe UI,Arial,sans-serif";
 
   function el(doc, name, attrs, text) {
@@ -109,7 +111,7 @@
 
   function drawText(doc, parent, x, y, text, opts) {
     var common = { x: x.toFixed(1), y: y.toFixed(1), "text-anchor": opts.anchor || "middle",
-                   "font-size": opts.size || 14, "font-weight": 700, "font-family": FONT };
+                   "font-size": Math.round((opts.size || 14) * K), "font-weight": 700, "font-family": FONT };
     // Halo blanc dessous, texte dessus : lisible sur n'importe quel fond, dans tous les navigateurs.
     parent.appendChild(el(doc, "text", Object.assign({ fill: "#fff", stroke: "#fff", "stroke-width": 5,
                                                        "stroke-linejoin": "round" }, common), text));
@@ -173,7 +175,8 @@
    */
   function render(svg, statusEl, meta, targets, opts) {
     opts = opts || {};
-    W = opts.width || 900; H = opts.height || 510;
+    W = opts.width || (base && base.width) || 900; H = opts.height || (base && base.height) || 510;
+    K = Math.max(1, W / 900); CAM_R = Math.round(19 * K);
     var doc = svg.ownerDocument;
     targets = (targets || []).filter(Boolean);
     var signature = JSON.stringify([opts.signature || null, W, H, meta, targets.map(function (t) {
@@ -264,6 +267,26 @@
 
   function reset() { lastSignature = null; }
 
-  root.SitePlan = { render: render, buildSegments: buildSegments, visits: visits, statusText: statusText,
+  /**
+   * Remplace le plan illustratif par le plan réel d'un étage (page Carte / import) : l'image est affichée et le
+   * calque de caméras prend ses dimensions. Sans étage, le plan illustratif reste en place. Renvoie une promesse.
+   */
+  function loadBase(img, svg, fetchFn) {
+    fetchFn = fetchFn || (root.fetch ? root.fetch.bind(root) : null);
+    if (!fetchFn) return Promise.resolve(null);
+    return fetchFn("/api/floors").then(function (r) { return r.ok ? r.json() : null; }).then(function (data) {
+      var list = data && data.floors || [];
+      var floor = list.filter(function (f) { return f.cameras && f.cameras.length; })[0] || null;
+      if (!floor || !floor.width || !floor.height) return null;
+      base = { width: floor.width, height: floor.height, floor_id: floor.id };
+      img.src = floor.image_url; img.width = floor.width; img.height = floor.height;
+      img.alt = "Carte « " + floor.name + " » avec la position des caméras";
+      svg.setAttribute("viewBox", "0 0 " + floor.width + " " + floor.height);
+      if (img.parentNode) img.parentNode.style.aspectRatio = floor.width + " / " + floor.height;
+      return base;
+    }).catch(function () { return null; });
+  }
+
+  root.SitePlan = { loadBase: loadBase, render: render, buildSegments: buildSegments, visits: visits, statusText: statusText,
                     reset: reset };
 })(typeof window !== "undefined" ? window : globalThis);

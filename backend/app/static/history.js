@@ -286,6 +286,7 @@
   }
 
   async function init() {
+    window.SitePlan.loadBase($("planImg"), $("planOverlay")).then(function (b) { if (b) drawTrajectory(); });
     var wanted = new URLSearchParams(location.search).get("participant_id");
     state.participantId = /^[1-9][0-9]{0,9}$/.test(wanted || "") ? Number(wanted) : null;
     showPersonFilter();

@@ -293,8 +293,6 @@ tr.selectable.selected td{background:var(--surface-3)}
 .week td.cell{border:1px solid var(--surface)}
 
 /* Mode démonstration (Module 11) */
-.demo-banner{background:#f5b301;color:#1a1300;text-align:center;font-weight:700;font-size:13px;height:22px;line-height:22px;overflow:hidden;white-space:nowrap;letter-spacing:.02em}
-body.demo .app{height:calc(100vh - 22px);height:calc(100dvh - 22px)}
 
 /* Pastille d'état dans une barre d'outils (pages Caméras, Plan et cheminement) */
 .pill{display:inline-flex;gap:8px;align-items:center;padding:5px 11px;border-radius:999px;border:1px solid var(--border);background:var(--surface-2);font-size:12px;color:var(--text)}

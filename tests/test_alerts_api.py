@@ -14,6 +14,7 @@ class AlertsApiTests(_api.ApiTests):
         s = SessionLocal()
         s.query(AlertAction).delete(); s.query(Alert).delete()
         s.query(Setting).filter(Setting.key == alerts.RULES_KEY).delete()
+        s.merge(Setting(key=alerts.SCOPE_KEY, value="0"))
         s.commit(); s.close()
         main.app.state.alerts.invalidate()
 
@@ -64,7 +65,7 @@ class AlertsApiTests(_api.ApiTests):
         self.raise_alert(); self.raise_alert(camera_id="salle")
         self.assertEqual(len(self.client.get("/api/alerts?camera_id=salle").json()["alerts"]), 1)
         self.assertEqual(len(self.client.get("/api/alerts?q=hors").json()["alerts"]), 2)
-        self.assertEqual(len(self.client.get("/api/alerts?category=analytics").json()["alerts"]), 0)
+        self.assertEqual(len(self.client.get("/api/alerts?category=people").json()["alerts"]), 0)
 
     def test_summary(self):
         s0 = self.client.get("/api/alerts/summary").json()
@@ -76,14 +77,14 @@ class AlertsApiTests(_api.ApiTests):
     def test_rules_roundtrip_and_effect(self):
         rules = self.client.get("/api/alerts/rules").json()
         self.assertEqual(len(rules["rules"]), len(alerts.TYPES))
-        r = self.client.put("/api/alerts/rules", json={"rules": {"line_crossed": {"enabled": True, "priority": "low", "dedup_sec": 5}}})
+        r = self.client.put("/api/alerts/rules", json={"rules": {"person_recognized": {"enabled": True, "priority": "low", "dedup_sec": 5}}})
         self.assertEqual(r.status_code, 200, r.text)
-        row = [x for x in r.json()["rules"] if x["type"] == "line_crossed"][0]
+        row = [x for x in r.json()["rules"] if x["type"] == "person_recognized"][0]
         self.assertEqual((row["enabled"], row["dedup_sec"]), (True, 5))
-        main.app.state.feed.emit(events.LINE_CROSSED, "Ligne 1 : Entrée", camera_id="entre", zone_id=1)
-        self.assertEqual(self.client.get("/api/alerts?category=analytics").json()["alerts"][0]["type"], "line_crossed")
-        for bad in ({"rules": {"nope": {"enabled": True}}}, {"rules": {"line_crossed": {"priority": "x"}}},
-                    {"rules": {}}, {"rules": {"line_crossed": {"dedup_sec": -3}}}, {"rules": {"line_crossed": {}}, "x": 1}):
+        main.app.state.feed.emit(events.PERSON_RECOGNIZED, "Ligne 1 : Entrée", camera_id="entre", zone_id=1)
+        self.assertEqual(self.client.get("/api/alerts?category=people").json()["alerts"][0]["type"], "person_recognized")
+        for bad in ({"rules": {"nope": {"enabled": True}}}, {"rules": {"person_recognized": {"priority": "x"}}},
+                    {"rules": {}}, {"rules": {"person_recognized": {"dedup_sec": -3}}}, {"rules": {"person_recognized": {}}, "x": 1}):
             with self.subTest(bad=bad):
                 self.assertEqual(self.client.put("/api/alerts/rules", json=bad).status_code, 422)
 
@@ -116,3 +117,25 @@ for _name in [n for n in dir(_api.ApiTests) if n.startswith("test_") and n not i
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AlertScopeApiTests(AlertsApiTests):
+    def test_scope_roundtrip_and_effect(self):
+        s = SessionLocal(); s.query(Setting).filter(Setting.key == alerts.SCOPE_KEY).delete(); s.commit(); s.close()
+        main.app.state.alerts.invalidate()
+        self.assertTrue(self.client.get("/api/alerts/scope").json()["targets_only"])
+        main.app.state.feed.emit(events.CAMERA_OFFLINE, "Hors ligne", camera_id="entre")
+        self.assertEqual(self.client.get("/api/alerts").json()["alerts"], [])
+        rule = next(r for r in self.client.get("/api/alerts/rules").json()["rules"] if r["type"] == "camera_offline")
+        self.assertTrue(rule["locked"])
+        # enregistrer les règles en mode verrouillé ne doit pas désactiver les autres réglages
+        self.assertEqual(self.client.put("/api/alerts/rules", json={"rules": {"camera_offline": {"priority": "low"}}}).status_code, 200)
+        self.assertEqual(self.client.put("/api/alerts/scope", json={"targets_only": False}).json(), {"targets_only": False})
+        main.app.state.feed.emit(events.CAMERA_OFFLINE, "Hors ligne", camera_id="entre")
+        self.assertEqual(len(self.client.get("/api/alerts").json()["alerts"]), 1)
+        self.assertEqual(self.client.put("/api/alerts/scope", json={"targets_only": "x"}).status_code, 422)
+        self.assertEqual(self.client.put("/api/alerts/scope", json={"targets_only": True, "x": 1}).status_code, 422)
+
+
+for _n in [n for n in dir(_api.ApiTests) if n.startswith("test_")] + [n for n in dir(AlertsApiTests) if n.startswith("test_") and n != "test_scope_roundtrip_and_effect"]:
+    setattr(AlertScopeApiTests, _n, None)

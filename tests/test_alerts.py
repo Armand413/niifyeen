@@ -16,6 +16,7 @@ def reset():
     for model in (AlertAction, Alert, Event, Participant):
         s.query(model).delete()
     s.query(Setting).filter(Setting.key == alerts.RULES_KEY).delete()
+    s.merge(Setting(key=alerts.SCOPE_KEY, value="0"))        # ces tests couvrent toutes les catégories d'alertes
     s.commit(); s.close()
 
 
@@ -45,10 +46,10 @@ class RulesTests(unittest.TestCase):
 
     def test_save_is_partial_persistent_and_rejects_unknown_types(self):
         s = SessionLocal()
-        rules = alerts.save_rules(s, {"line_crossed": {"enabled": True, "priority": "medium"}})
-        self.assertTrue(rules["line_crossed"]["enabled"])
-        self.assertEqual(rules["line_crossed"]["dedup_sec"], 10)          # le reste est conservé
-        self.assertTrue(alerts.load_rules(s)["line_crossed"]["enabled"])
+        rules = alerts.save_rules(s, {"camera_frozen": {"enabled": False, "priority": "medium"}})
+        self.assertFalse(rules["camera_frozen"]["enabled"])
+        self.assertEqual(rules["camera_frozen"]["dedup_sec"], 300)          # le reste est conservé
+        self.assertFalse(alerts.load_rules(s)["camera_frozen"]["enabled"])
         with self.assertRaises(AlertError):
             alerts.save_rules(s, {"nope": {"enabled": True}})
         with self.assertRaises(AlertError):
@@ -59,10 +60,10 @@ class RulesTests(unittest.TestCase):
     def test_corrupted_saved_rules_fall_back_to_defaults(self):
         s = SessionLocal()
         s.add(Setting(key=alerts.RULES_KEY, value="{pas du json")); s.commit()
-        self.assertEqual(alerts.load_rules(s)["camera_offline"], alerts.DEFAULT_RULES["camera_offline"])
+        self.assertEqual(alerts.load_rules(s, enforce=False)["camera_offline"], {**alerts.DEFAULT_RULES["camera_offline"], "locked": False})
         s.query(Setting).filter(Setting.key == alerts.RULES_KEY).update({"value": json.dumps({"camera_offline": {"priority": "x"}, "zzz": {}})})
         s.commit()
-        self.assertEqual(alerts.load_rules(s)["camera_offline"], alerts.DEFAULT_RULES["camera_offline"])
+        self.assertEqual(alerts.load_rules(s, enforce=False)["camera_offline"], {**alerts.DEFAULT_RULES["camera_offline"], "locked": False})
         s.close()
 
 
@@ -90,21 +91,21 @@ class CenterTests(unittest.TestCase):
         s.close()
 
     def test_disabled_and_unknown_types_make_no_alert(self):
-        self.feed.emit(events.LINE_CROSSED, "Ligne 1 : Entrée", camera_id="c1", zone_id=1)
+        self.feed.emit(events.PERSON_RECOGNIZED, "Ligne 1 : Entrée", camera_id="c1", zone_id=1)
         self.feed.emit(events.CAMERA_ONLINE, "Caméra rétablie", camera_id="c1")
         self.assertEqual(self.count(), 0)
 
     def test_repeated_events_are_grouped(self):
         for _ in range(5):
-            self.feed.emit(events.ZONE_INTRUSION, "Intrusion : Hall", camera_id="c1", zone_id=3)
+            self.feed.emit(events.CAMERA_OBSTRUCTED, "Intrusion : Hall", camera_id="c1", zone_id=3)
         self.assertEqual(self.count(), 1)
         s = SessionLocal(); a = alerts.list_alerts(s)[0]; s.close()
-        self.assertEqual((a["count"], a["priority"]), (5, "critical"))
+        self.assertEqual((a["count"], a["priority"]), (5, "high"))
 
     def test_different_cameras_zones_or_people_are_not_grouped(self):
-        self.feed.emit(events.ZONE_INTRUSION, "x", camera_id="c1", zone_id=3)
-        self.feed.emit(events.ZONE_INTRUSION, "x", camera_id="c1", zone_id=4)
-        self.feed.emit(events.ZONE_INTRUSION, "x", camera_id="c2", zone_id=3)
+        self.feed.emit(events.CAMERA_OBSTRUCTED, "x", camera_id="c1", zone_id=3)
+        self.feed.emit(events.CAMERA_OBSTRUCTED, "x", camera_id="c1", zone_id=4)
+        self.feed.emit(events.CAMERA_OBSTRUCTED, "x", camera_id="c2", zone_id=3)
         self.feed.emit(events.CAMERA_OFFLINE, "x", camera_id="c1")
         self.assertEqual(self.count(), 4)
 
@@ -127,10 +128,10 @@ class CenterTests(unittest.TestCase):
         self.assertEqual(self.count(), 2)
 
     def test_rule_change_applies_after_invalidate_and_priority_is_used(self):
-        s = SessionLocal(); alerts.save_rules(s, {"line_crossed": {"enabled": True, "priority": "medium"}}); s.close()
+        s = SessionLocal(); alerts.save_rules(s, {"person_recognized": {"enabled": True, "priority": "medium"}}); s.close()
         self.center.invalidate()
-        self.feed.emit(events.LINE_CROSSED, "Ligne 1 : Entrée", camera_id="c1", zone_id=1)
-        self.assertEqual(self.count(priority="medium", type="line_crossed"), 1)
+        self.feed.emit(events.PERSON_RECOGNIZED, "Ligne 1 : Entrée", camera_id="c1", zone_id=1)
+        self.assertEqual(self.count(priority="medium", type="person_recognized"), 1)
 
     def test_listener_failure_never_breaks_the_feed(self):
         self.feed.add_listener(lambda ev: 1 / 0)
@@ -209,12 +210,12 @@ class WorkflowTests(unittest.TestCase):
                 alerts.bulk_status(self.db, bad, "seen")
 
     def test_counts_and_summary(self):
-        self.feed.emit(events.ZONE_INTRUSION, "x", camera_id="c1", zone_id=1)
+        self.feed.emit(events.CAMERA_OBSTRUCTED, "x", camera_id="c1", zone_id=1)
         s = alerts.summary(self.db)
         self.assertEqual((s["new"], s["new_urgent"], s["fresh"]), (2, 2, []))
         first = s["last_id"] - 1
         fresh = alerts.summary(self.db, after_id=first)["fresh"]
-        self.assertEqual([f["priority"] for f in fresh], ["critical"])
+        self.assertEqual([f["priority"] for f in fresh], ["high"])
         self.assertTrue(fresh[0]["sound"])
         alerts.set_status(self.db, self.id, "seen")
         self.assertEqual(alerts.summary(self.db)["counts"], {"new": 1, "seen": 1, "acknowledged": 0, "closed": 0})
@@ -228,7 +229,7 @@ class FilterTests(unittest.TestCase):
         self.addCleanup(self.center.stop)
         self.feed.emit(events.CAMERA_OFFLINE, "Caméra hors ligne : Entrée", camera_id="c1")
         self.feed.emit(events.TARGET_SEEN, "Cible 1 repérée : Hall_100%", camera_id="c2", target_id=1)
-        self.feed.emit(events.ZONE_INTRUSION, "Intrusion : Labo", camera_id="c2", zone_id=2)
+        self.feed.emit(events.CAMERA_OBSTRUCTED, "Intrusion : Labo", camera_id="c2", zone_id=2)
         self.db = SessionLocal()
         self.addCleanup(self.db.close)
 
@@ -237,9 +238,10 @@ class FilterTests(unittest.TestCase):
 
     def test_filters(self):
         self.assertEqual(len(self.types()), 3)
-        self.assertEqual(self.types(priority="critical"), ["zone_intrusion"])
-        self.assertEqual(self.types(category="camera"), ["camera_offline"])
-        self.assertEqual(self.types(camera_id="c2"), ["target_seen", "zone_intrusion"])
+        self.assertEqual(self.types(priority="critical"), [])
+        self.assertEqual(self.types(priority="high"), ["camera_obstructed", "camera_offline"])
+        self.assertEqual(self.types(category="camera"), ["camera_obstructed", "camera_offline"])
+        self.assertEqual(self.types(camera_id="c2"), ["camera_obstructed", "target_seen"])
         self.assertEqual(self.types(status="closed"), [])
         self.assertEqual(len(self.types(status="open")), 3)
         a = alerts.list_alerts(self.db, camera_id="c1")[0]
@@ -247,7 +249,7 @@ class FilterTests(unittest.TestCase):
         self.assertEqual(len(self.types(status="open")), 2)
 
     def test_search_is_literal_and_case_insensitive(self):
-        self.assertEqual(self.types(q="labo"), ["zone_intrusion"])
+        self.assertEqual(self.types(q="labo"), ["camera_obstructed"])
         self.assertEqual(self.types(q="100%"), ["target_seen"])
         self.assertEqual(self.types(q="%"), ["target_seen"])               # % n'est pas un joker
         self.assertEqual(self.types(q="__"), [])
@@ -375,7 +377,7 @@ class NotifierTests(unittest.TestCase):
         with mock.patch.object(center.notifier, "submit") as submit:
             center.on_event({"id": 1, "type": "target_seen", "camera_id": "c1", "title": "t", "payload": {}})
             self.assertEqual(submit.call_count, 0)
-            center.on_event({"id": 2, "type": "zone_intrusion", "camera_id": "c1", "title": "t", "payload": {"zone_id": 1}})
+            center.on_event({"id": 2, "type": "camera_obstructed", "camera_id": "c1", "title": "t", "payload": {"zone_id": 1}})
             self.assertEqual(submit.call_count, 1)
 
 
@@ -415,3 +417,63 @@ class PrivacyAndRetentionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TargetsOnlyTests(unittest.TestCase):
+    """Par défaut, seules les cibles donnent une alerte."""
+
+    def setUp(self):
+        reset()
+        s = SessionLocal()
+        s.query(Setting).filter(Setting.key == alerts.SCOPE_KEY).delete()
+        s.commit(); s.close()
+        self.feed, self.center = make_center()
+        self.center.start()
+        self.addCleanup(self.center.stop)
+
+    def count(self, type_):
+        s = SessionLocal()
+        try:
+            return s.query(Alert).filter(Alert.type == type_).count()
+        finally:
+            s.close()
+
+    def test_default_is_targets_only(self):
+        s = SessionLocal()
+        try:
+            self.assertTrue(alerts.targets_only(s))
+        finally:
+            s.close()
+        self.feed.emit(events.CAMERA_OFFLINE, "Hors ligne", camera_id="c1")
+        self.feed.emit(events.CAMERA_OBSTRUCTED, "Intrusion", camera_id="c1", zone_id=1)
+        self.feed.emit(events.TARGET_SEEN, "Cible repérée", camera_id="c1", target_id=1)
+        self.assertEqual(self.count("camera_offline"), 0)
+        self.assertEqual(self.count("camera_obstructed"), 0)
+        self.assertEqual(self.count("target_seen"), 1)
+
+    def test_rules_are_locked_and_view_says_so(self):
+        s = SessionLocal()
+        try:
+            rules = alerts.load_rules(s)
+        finally:
+            s.close()
+        self.assertTrue(rules["camera_offline"]["locked"] and not rules["camera_offline"]["enabled"])
+        self.assertFalse(rules["target_moved"]["locked"])
+        self.assertTrue(rules["target_moved"]["enabled"])
+
+    def test_turning_it_off_restores_the_saved_rules(self):
+        s = SessionLocal()
+        try:
+            alerts.save_rules(s, {"camera_offline": {"priority": "low"}})
+            alerts.set_targets_only(s, False)
+            rules = alerts.load_rules(s)
+            self.assertTrue(rules["camera_offline"]["enabled"])
+            self.assertEqual(rules["camera_offline"]["priority"], "low")
+            self.assertFalse(rules["camera_offline"]["locked"])
+            with self.assertRaises(alerts.AlertError):
+                alerts.set_targets_only(s, "oui")
+        finally:
+            s.close()
+        self.center.invalidate()
+        self.feed.emit(events.CAMERA_OFFLINE, "Hors ligne", camera_id="c1")
+        self.assertEqual(self.count("camera_offline"), 1)

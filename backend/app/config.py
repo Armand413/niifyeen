@@ -37,13 +37,7 @@ def _env_int(name: str, default: int) -> int:
 
 
 # ---- Fichiers ---------------------------------------------------------------
-# Mode démonstration : base, enregistrements et caméras totalement séparés des données réelles. NIIFYEEN_DB est ignoré
-# (un lancement en démonstration ne peut donc jamais écrire dans la vraie base) ; NIIFYEEN_DEMO_DB sert aux tests.
-DEMO = os.getenv("NIIFYEEN_DEMO", "").strip().lower() in ("1", "true", "oui", "yes")
-if DEMO:
-    DB_PATH = Path(os.getenv("NIIFYEEN_DEMO_DB") or PROJECT_ROOT / "niifyeen-demo.db")
-else:
-    DB_PATH = Path(os.getenv("NIIFYEEN_DB") or PROJECT_ROOT / "niifyeen.db")
+DB_PATH = Path(os.getenv("NIIFYEEN_DB") or PROJECT_ROOT / "niifyeen.db")
 DB_URL = f"sqlite:///{DB_PATH.as_posix()}"
 MODELS_DIR = Path(os.getenv("NIIFYEEN_MODELS_DIR") or PROJECT_ROOT / "models_insightface")
 CAMERAS_FILE = Path(os.getenv("NIIFYEEN_CAMERAS_FILE") or PROJECT_ROOT / "cameras.json")
@@ -57,6 +51,9 @@ YOLO_WEIGHTS = str(_local_weights) if _local_weights.exists() else "yolov8n.pt"
 # des données réelles avant de s'y fier.
 DB_THRESHOLD = _env_float("NIIFYEEN_DB_THRESHOLD", 0.35)          # personne enrôlée : en dessous, « inconnu »
 TARGET_THRESHOLD = _env_float("NIIFYEEN_TARGET_THRESHOLD", 0.40)  # cible recherchée
+# Durée pendant laquelle une identité reconnue (cible ou personne enrôlée) est conservée tant que la même silhouette est
+# suivie, même si le visage n'est plus visible (de dos, de profil, tête baissée). Au-delà, il faut revoir le visage.
+IDENTITY_HOLD_SEC = max(1.0, min(300.0, _env_float("NIIFYEEN_IDENTITY_HOLD_SEC", 20.0)))
 REID_THRESHOLD = _env_float("NIIFYEEN_REID_THRESHOLD", 0.45)      # même personne entre caméras
 
 # Statuts de correspondance avec une personne enrôlée. Une similarité n'est jamais une identité certaine :
@@ -104,8 +101,7 @@ LOG_EVERY_SEC = 0.8  # par (caméra, piste, mode)
 # Durée de conservation des observations, en jours. 0 = conservation illimitée.
 # Enregistrement vidéo (Module 9) : désactivé tant que l'exploitant ne l'active pas dans l'interface ;
 # NIIFYEEN_RECORDING_DISABLED=1 l'interdit totalement (l'interface ne peut pas le réactiver).
-RECORDINGS_DIR = Path(os.getenv("NIIFYEEN_RECORDINGS_DIR") or PROJECT_ROOT / ("recordings-demo" if DEMO else "recordings"))
-DEMO_SPEED = max(0.25, min(20.0, _env_float("NIIFYEEN_DEMO_SPEED", 1.0)))
+RECORDINGS_DIR = Path(os.getenv("NIIFYEEN_RECORDINGS_DIR") or PROJECT_ROOT / "recordings")
 RECORDING_HARD_DISABLED = os.getenv("NIIFYEEN_RECORDING_DISABLED", "0").strip().lower() in ("1", "true", "oui", "yes")
 RECORDING_MIN_FREE_MB = _env_int("NIIFYEEN_RECORDING_MIN_FREE_MB", 500)
 RETENTION_DAYS = _env_int("NIIFYEEN_RETENTION_DAYS", 30)

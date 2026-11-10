@@ -113,16 +113,10 @@
     { href: "/alerts", icon: "bell", label: "Alertes", key: "alerts" },
     { href: "/people", icon: "users", label: "Personnes", key: "people" },
     { href: "/map", icon: "route", label: "Carte", key: "map" },
-    { href: "/zones", icon: "target", label: "Lignes et zones", key: "zones" },
     { href: "/admin/cameras", icon: "camera", label: "Gestion des caméras", key: "admin-cameras" },
     { href: "/", icon: "users", label: "Cibles et personnes", key: "home" },
     { href: "/cameras", icon: "route", label: "Plan et cheminement", key: "cameras" },
-    { href: "/investigation", icon: "search", label: "Investigation", key: "investigation" },
-    { href: "/statistics", icon: "chart", label: "Statistiques", key: "statistics" },
-    { href: "/reports", icon: "list", label: "Rapports", key: "reports" },
-    { href: "/recordings", icon: "camera", label: "Enregistrements", key: "recordings" },
-    { href: "/history", icon: "history", label: "Historique", key: "history" },
-    { href: "/logs", icon: "list", label: "Journal agrégé", key: "logs" }
+    { href: "/history", icon: "history", label: "Historique", key: "history" }
   ];
 
   function mount(options) {
@@ -186,26 +180,7 @@
     });
     side.appendChild(collapse);
     watchAlerts();
-    markDemo(nav, options.active);
     return side;
-  }
-
-  /** Mode démonstration : bandeau permanent + entrée de menu, pour qu'on ne confonde jamais avec des données réelles. */
-  function markDemo(nav, active) {
-    if (typeof fetch !== "function") return;
-    fetch("/api/demo").then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
-      if (!d || !d.demo || document.getElementById("demoBanner")) return;
-      var bar = document.createElement("div");
-      bar.id = "demoBanner"; bar.className = "demo-banner"; bar.setAttribute("role", "status");
-      bar.textContent = "MODE DÉMONSTRATION — caméras, personnes et données simulées";
-      document.body.insertBefore(bar, document.body.firstChild);
-      document.body.classList.add("demo");
-      document.title = "[DÉMO] " + document.title;
-      var a = document.createElement("a"); a.href = "/demo"; a.title = "Démonstration";
-      if (active === "demo") a.setAttribute("aria-current", "page");
-      var label = document.createElement("span"); label.className = "label"; label.textContent = "Démonstration";
-      a.append(icon("eye"), label); nav.insertBefore(a, nav.firstChild);
-    }).catch(function () { /* hors démonstration ou serveur injoignable */ });
   }
 
 

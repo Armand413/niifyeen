@@ -26,6 +26,5 @@ cameras.json
 
 # Enregistrements vidéo (visages) : ne JAMAIS les versionner
 recordings/
-recordings-demo/
-niifyeen-demo.db*
 *.nyr
+cartes-locales/

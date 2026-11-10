@@ -16,11 +16,10 @@ from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, Res
 from fastapi.staticfiles import StaticFiles
 
 from . import config
-from .activity_log import read_activity
 from .db import (init_db, SessionLocal, Participant, EmbeddingRef, Detection,
                  utcnow, to_iso_utc, delete_participant, save_target_move, Event)
 from .people import PersonError
-from . import alerts, analytics, demo, investigation, pdf_report, recordings, reports, stats, camera_probe, events, floors, history, people, supervision, target_profile, target_sessions
+from . import alerts, camera_probe, events, floors, history, people, supervision, target_profile, target_sessions
 from .camera_manager import CameraManager, CameraError, normalize_source, source_kind
 from .db_logger import DBLogger
 from .supervision import SupervisionMonitor
@@ -109,16 +108,13 @@ def _apply_targets():
 
 def _make_pipeline(cfg: dict):
     """Crée le traitement d'une caméra à partir de sa configuration enregistrée."""
-    if config.DEMO:                                    # caméra virtuelle : aucun matériel, aucun modèle de vision
-        style = next((c for c in demo.CAMERAS if c["id"] == cfg["id"]), {})
-        return demo.SimCamera(cfg["id"], app.state.demo, background=style.get("bg", (80, 80, 80)), label=cfg.get("label") or cfg["id"])
     width, height = cfg.get("capture_width"), cfg.get("capture_height")
     capture_size = (width, height) if width and height else config.DEFAULT_CAPTURE_SIZE
     return PersonPipeline(
         source=cfg["source"], camera_id=cfg["id"], reid=app.state.reid,
         capture_size=capture_size, out_size=config.STREAM_SIZE,
         tracker_yaml="bytetrack.yaml", imgsz=480, yolo_conf=0.35,
-        head_ratio=0.50, recog_every_sec=0.60, lock_hold_sec=3.0, jpeg_quality=70,
+        head_ratio=0.50, recog_every_sec=0.60, lock_hold_sec=config.IDENTITY_HOLD_SEC, jpeg_quality=70,
         process_fps=cfg.get("process_fps"),
     )
 
@@ -127,17 +123,6 @@ def _make_pipeline(cfg: dict):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    app.state.demo = None
-    if config.DEMO:
-        demo.assert_isolated()
-        app.state.demo = demo.Scenario(speed=config.DEMO_SPEED)
-        _ddb = SessionLocal()
-        try:
-            app.state.demo.people_ids = demo.seed(_ddb)["people_ids"]
-            demo.backfill(_ddb)
-        finally:
-            _ddb.close()
-        print("[MAIN] MODE DÉMONSTRATION : données et caméras simulées, base séparée", config.DB_PATH.name)
     app.state.camera_meta = {}
     app.state.camera_sources = {}
     app.state.feed = events.EventFeed()
@@ -158,14 +143,9 @@ async def lifespan(app: FastAPI):
         cams=app.state.cams, meta=app.state.camera_meta, sources=app.state.camera_sources,
         make_pipeline=_make_pipeline, known=load_known_from_db,
         targets=app.state.targets.for_cameras, feed=app.state.feed)
-    imported = app.state.camera_manager.seed_if_needed(demo.CAMERAS if config.DEMO else config.load_cameras())
+    imported = app.state.camera_manager.seed_if_needed(config.load_cameras())
     if imported:
         print(f"[MAIN] {imported} caméra(s) importée(s) depuis {config.CAMERAS_FILE.name} (premier démarrage)")
-    if config.DEMO and len(app.state.targets) == 0:           # cible fictive (aucune photo, empreinte aléatoire)
-        _t = app.state.targets.add(np.random.RandomState(7).randn(512), photo=None)
-        app.state.demo.target_id = _t.id
-    elif config.DEMO:
-        app.state.demo.target_id = app.state.targets.items()[0].id
     app.state.camera_manager.load_and_start()
 
     app.state.target_worker = TargetWorker(app.state.targets, lambda: app.state.cams)
@@ -175,21 +155,13 @@ async def lifespan(app: FastAPI):
     app.state.monitor = SupervisionMonitor(lambda: app.state.cams, app.state.targets.items,
                                            app.state.feed, lambda: app.state.camera_meta)
     app.state.monitor.start()
-    app.state.alerts = alerts.AlertCenter(app.state.feed, lambda: app.state.camera_meta,
-                                          notifier=demo.NullNotifier() if config.DEMO else None)
+    app.state.alerts = alerts.AlertCenter(app.state.feed, lambda: app.state.camera_meta)
     app.state.alerts.start()
-    app.state.recorder = recordings.Recorder(lambda: app.state.cams, app.state.feed)
-    app.state.recorder.start()
-    app.state.analytics = analytics.AnalyticsEngine(lambda: app.state.cams, app.state.feed,
-                                                    lambda: app.state.camera_meta)
-    app.state.analytics.start()
     print(f"[MAIN] Caméras démarrées: {list(app.state.cams.keys())}")
     try:
         yield
     finally:
-        app.state.analytics.stop()
         app.state.alerts.stop()
-        app.state.recorder.stop()
         app.state.monitor.stop()
         app.state.logger.stop()
         app.state.target_worker.stop()
@@ -198,6 +170,17 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="NiifYéén — Cheminement + Historique + DB names", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
+
+@app.middleware("http")
+async def _revalidate_pages(request, call_next):
+    """Pages et scripts : le navigateur revérifie à chaque fois (sinon une ancienne interface peut rester affichée après une mise à jour)."""
+    response = await call_next(request)
+    path = request.url.path
+    if (path.startswith("/static/") or response.headers.get("content-type", "").startswith("text/html")) \
+            and "cache-control" not in response.headers:
+        response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 # ---------- Pages ----------
@@ -209,11 +192,6 @@ def page_home():
 @app.get("/cameras", response_class=HTMLResponse)
 def page_cameras():
     return (BASE_DIR / "static" / "cameras.html").read_text(encoding="utf-8")
-
-
-@app.get("/logs", response_class=HTMLResponse)
-def page_logs():
-    return (BASE_DIR / "static" / "logs.html").read_text(encoding="utf-8")
 
 
 @app.get("/supervision", response_class=HTMLResponse)
@@ -232,39 +210,9 @@ def page_cameras_admin():
     return (BASE_DIR / "static" / "cameras-admin.html").read_text(encoding="utf-8")
 
 
-@app.get("/recordings", response_class=HTMLResponse)
-def page_recordings():
-    return (BASE_DIR / "static" / "recordings.html").read_text(encoding="utf-8")
-
-
-@app.get("/reports", response_class=HTMLResponse)
-def page_reports():
-    return (BASE_DIR / "static" / "reports.html").read_text(encoding="utf-8")
-
-
-@app.get("/demo", response_class=HTMLResponse)
-def page_demo():
-    return (BASE_DIR / "static" / "demo.html").read_text(encoding="utf-8")
-
-
-@app.get("/statistics", response_class=HTMLResponse)
-def page_statistics():
-    return (BASE_DIR / "static" / "statistics.html").read_text(encoding="utf-8")
-
-
-@app.get("/investigation", response_class=HTMLResponse)
-def page_investigation():
-    return (BASE_DIR / "static" / "investigation.html").read_text(encoding="utf-8")
-
-
 @app.get("/alerts", response_class=HTMLResponse)
 def page_alerts():
     return (BASE_DIR / "static" / "alerts.html").read_text(encoding="utf-8")
-
-
-@app.get("/zones", response_class=HTMLResponse)
-def page_zones():
-    return (BASE_DIR / "static" / "zones.html").read_text(encoding="utf-8")
 
 
 @app.get("/map", response_class=HTMLResponse)
@@ -278,18 +226,6 @@ def page_history():
 
 
 # ---------- API ----------
-@app.get("/api/logs/activity")
-def activity_logs(minutes: int = Query(60, ge=1, le=10080),
-                  camera_id: str = Query("", max_length=100),
-                  page: int = Query(1, ge=1),
-                  page_size: int = Query(50, ge=1, le=100)):
-    db = SessionLocal()
-    try:
-        return read_activity(db, minutes, camera_id, page, page_size)
-    finally:
-        db.close()
-
-
 # ---------- Historique des détections ----------
 def _history_range(minutes: int, start: str, end: str):
     try:
@@ -358,179 +294,6 @@ def history_csv(minutes: int = Query(60, ge=1, le=60 * 24 * 90),
     return StreamingResponse(generate(), media_type="text/csv; charset=utf-8",
                              headers={"Content-Disposition": f'attachment; filename="{name}"',
                                       "Cache-Control": "no-store"})
-
-
-# ---------- Rapports (Module 12) ----------
-def _report_build(minutes, start, end, title, camera_id, sections, tz_offset_min):
-    since, until = _history_range(minutes, start, end)
-    try:
-        params = reports.parse_params(title, camera_id, sections, tz_offset_min)
-    except reports.ReportError as exc:
-        raise HTTPException(422, str(exc))
-    db = SessionLocal()
-    try:
-        return reports.build(db, since, until, params, _camera_labels())
-    except history.HistoryError as exc:
-        raise HTTPException(422, str(exc))
-    finally:
-        db.close()
-
-
-_RPT = dict(minutes=Query(1440, ge=1, le=60 * 24 * 90), start=Query("", max_length=40), end=Query("", max_length=40),
-            title=Query("", max_length=120), camera_id=Query("", max_length=100), sections=Query(None, max_length=200),
-            tz_offset_min=Query(0, ge=-840, le=840))
-
-
-@app.get("/api/reports/options")
-def reports_options():
-    db = SessionLocal()
-    try:
-        return {"sections": [{"id": k, "label": v} for k, v in reports.SECTIONS.items()], "templates": reports.list_templates(db),
-                "max_templates": reports.MAX_TEMPLATES}
-    finally:
-        db.close()
-
-
-@app.get("/api/reports/preview")
-def reports_preview(minutes: int = _RPT["minutes"], start: str = _RPT["start"], end: str = _RPT["end"], title: str = _RPT["title"],
-                    camera_id: str = _RPT["camera_id"], sections: str = _RPT["sections"], tz_offset_min: int = _RPT["tz_offset_min"]):
-    return _report_build(minutes, start, end, title, camera_id, sections, tz_offset_min)
-
-
-@app.get("/api/reports/report.pdf")
-def reports_pdf(minutes: int = _RPT["minutes"], start: str = _RPT["start"], end: str = _RPT["end"], title: str = _RPT["title"],
-                camera_id: str = _RPT["camera_id"], sections: str = _RPT["sections"], tz_offset_min: int = _RPT["tz_offset_min"]):
-    report = _report_build(minutes, start, end, title, camera_id, sections, tz_offset_min)
-    return _pdf_response(lambda: reports.render_pdf(report), f"rapport-activite-niifyeen-{utcnow():%Y%m%d-%H%M%S}.pdf")
-
-
-class ReportTemplateIn(BaseModel):
-    title: str = Field("", max_length=120)
-    camera_id: str = Field("", max_length=100)
-    sections: List[str] = Field(default_factory=list, max_length=len(reports.SECTIONS))
-    minutes: int = Field(1440, ge=1, le=60 * 24 * 90)
-
-
-@app.put("/api/reports/templates/{name}")
-def reports_template_save(name: str, body: ReportTemplateIn):
-    db = SessionLocal()
-    try:
-        params = reports.parse_params(body.title, body.camera_id, ",".join(body.sections) if body.sections else None)
-        return {"templates": reports.save_template(db, name, body.minutes, params)}
-    except reports.ReportError as exc:
-        raise HTTPException(422, str(exc))
-    finally:
-        db.close()
-
-
-@app.delete("/api/reports/templates/{name}")
-def reports_template_delete(name: str):
-    db = SessionLocal()
-    try:
-        if not reports.delete_template(db, name):
-            raise HTTPException(404, "Modèle introuvable.")
-        return {"templates": reports.list_templates(db)}
-    finally:
-        db.close()
-
-
-# ---------- Mode démonstration (Module 11) ----------
-@app.get("/api/demo")
-def demo_status():
-    if not config.DEMO:
-        return {"demo": False}
-    st, loop = app.state.demo.position()
-    return {"demo": True, "period_sec": demo.PERIOD_SEC, "speed": app.state.demo.speed, "scenario_sec": round(st, 1), "loop": loop,
-            "script": demo.script_view(), "cameras": [{"id": c["id"], "label": c["label"]} for c in demo.CAMERAS],
-            "people": app.state.demo.people_names, "database": config.DB_PATH.name,
-            "simulated": ["Caméras et images (silhouettes dessinées, sans visage)", "Reconnaissance de personnes et de la cible",
-                          "Personnes enrôlées (fictives, sans photo ni empreinte)", "Historique des dernières 24 h"],
-            "real": ["Lignes et zones, comptages, affluence, intrusions", "Alertes, états, historique", "Suivi de la cible et trajets",
-                     "Statistiques, investigation, enregistrement vidéo, rapports"]}
-
-
-def _demo_only():
-    if not config.DEMO:
-        raise HTTPException(403, "Disponible uniquement en mode démonstration (lancez tools/run_demo.py).")
-
-
-@app.post("/api/demo/restart")
-def demo_restart():
-    _demo_only()
-    app.state.demo.restart()
-    return {"ok": True}
-
-
-@app.post("/api/demo/reset")
-def demo_reset():
-    """Efface les données de démonstration produites jusqu'ici, recrée l'historique fictif et relance le scénario."""
-    _demo_only()
-    db = SessionLocal()
-    try:
-        demo.reset(db)
-    finally:
-        db.close()
-    app.state.demo.restart()
-    return {"ok": True}
-
-
-# ---------- Statistiques anonymes (Module 10) ----------
-_TZ = Query(0, ge=-840, le=840, description="Décalage du fuseau du navigateur, en minutes par rapport à UTC")
-
-
-@app.get("/api/stats/overview")
-def stats_overview(minutes: int = Query(1440, ge=1, le=60 * 24 * 90),
-                   start: str = Query("", max_length=40), end: str = Query("", max_length=40),
-                   camera_id: str = Query("", max_length=100), tz_offset_min: int = _TZ):
-    since, until = _history_range(minutes, start, end)
-    return _history_call(stats.overview, since, until, camera_id, tz_offset_min)
-
-
-@app.get("/api/stats/heatmap")
-def stats_heatmap(camera_id: str = Query("", max_length=100), minutes: int = Query(1440, ge=1, le=60 * 24 * 90),
-                  start: str = Query("", max_length=40), end: str = Query("", max_length=40),
-                  cols: int = Query(32, ge=2, le=stats.MAX_GRID), rows: int = Query(18, ge=2, le=stats.MAX_GRID)):
-    since, until = _history_range(minutes, start, end)
-    return _history_call(stats.heatmap, since, until, camera_id, cols, rows)
-
-
-@app.get("/api/stats/compare")
-def stats_compare(minutes: int = Query(1440, ge=1, le=60 * 24 * 45), camera_id: str = Query("", max_length=100),
-                  start: str = Query("", max_length=40), end: str = Query("", max_length=40),
-                  ref_start: str = Query("", max_length=40), ref_end: str = Query("", max_length=40)):
-    """Période courante contre une référence : par défaut la période de même durée qui la précède."""
-    a_since, a_until = _history_range(minutes, start, end)
-    if ref_start or ref_end:
-        b_since, b_until = _history_range(minutes, ref_start, ref_end)
-    else:
-        b_since, b_until = a_since - (a_until - a_since), a_since
-    return _history_call(stats.compare, a_since, a_until, b_since, b_until, camera_id)
-
-
-@app.get("/api/stats/transitions")
-def stats_transitions(minutes: int = Query(1440, ge=1, le=60 * 24 * 90),
-                      start: str = Query("", max_length=40), end: str = Query("", max_length=40),
-                      max_gap_sec: int = Query(600, ge=30, le=3600)):
-    since, until = _history_range(minutes, start, end)
-    return _history_call(stats.transitions, since, until, max_gap_sec)
-
-
-@app.get("/api/stats/overview.csv")
-def stats_csv(minutes: int = Query(1440, ge=1, le=60 * 24 * 90),
-              start: str = Query("", max_length=40), end: str = Query("", max_length=40),
-              camera_id: str = Query("", max_length=100), tz_offset_min: int = _TZ):
-    since, until = _history_range(minutes, start, end)
-
-    def generate():
-        db = SessionLocal()
-        try:
-            yield from stats.iter_csv(db, since, until, camera_id, tz_offset_min)
-        finally:
-            db.close()
-
-    name = f"statistiques-niifyeen-{utcnow():%Y%m%d-%H%M%S}.csv"
-    return StreamingResponse(generate(), media_type="text/csv; charset=utf-8",
-                             headers={"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
 
 
 # ---------- Gestion des caméras ----------
@@ -684,7 +447,7 @@ def supervision_cameras():
 
 @app.get("/api/events")
 def list_events(limit: int = Query(50, ge=1, le=200), after_id: int = Query(None, ge=0),
-                before_id: int = Query(None, ge=1), family: str = Query("", pattern="^(targets|people|cameras|analytics)?$"),
+                before_id: int = Query(None, ge=1), family: str = Query("", pattern="^(targets|people|cameras)?$"),
                 camera_id: str = Query("", max_length=100),
                 severity: str = Query("", pattern="^(info|warning|critical)?$")):
     """Événements, du plus récent au plus ancien. ``after_id`` ne renvoie que les nouveautés."""
@@ -895,306 +658,6 @@ def api_delete_reference(participant_id: int, reference_id: int):
     return {"deleted": True}
 
 
-# ---------- Enregistrement vidéo (Module 9) ----------
-class RecordingStartIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    camera_id: str
-    minutes: int = 30
-
-
-class RecordingStopIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    camera_id: str
-
-
-class RecordingSettingsIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    enabled: Optional[bool] = None
-    fps: Optional[int] = None
-    pre_roll_sec: Optional[int] = None
-    post_roll_sec: Optional[int] = None
-    retention_days: Optional[int] = None
-    max_storage_mb: Optional[int] = None
-    allow_export: Optional[bool] = None
-    event_types: Optional[list] = None
-    cameras: Optional[list] = None
-    schedules: Optional[list] = None
-
-
-def _rec_call(fn, *args, **kwargs):
-    db = SessionLocal()
-    try:
-        return fn(db, *args, **kwargs)
-    except recordings.RecordingError as exc:
-        raise HTTPException(exc.status, str(exc))
-    finally:
-        db.close()
-
-
-def _rec_range(minutes, start, end):
-    try:
-        return history.resolve_range(minutes, start or None, end or None)
-    except history.HistoryError as exc:
-        raise HTTPException(422, str(exc))
-
-
-@app.get("/api/recordings/settings")
-def api_rec_settings():
-    s = _rec_call(lambda db: recordings.load_settings(db))
-    return {"settings": s, "hard_disabled": app.state.recorder.hard_disabled,
-            "event_types": list(recordings.EVENT_TYPES), "limits": {"manual_minutes": recordings.MAX_MANUAL_MINUTES,
-                                                                    "export_minutes": recordings.MAX_EXPORT_MINUTES}}
-
-
-@app.put("/api/recordings/settings")
-def api_rec_settings_save(body: RecordingSettingsIn):
-    data = {k: getattr(body, k) for k in body.model_fields_set}
-    s = _rec_call(lambda db: recordings.save_settings(db, data))
-    app.state.recorder.reload()
-    return {"settings": s}
-
-
-@app.get("/api/recordings/status")
-def api_rec_status():
-    return app.state.recorder.status()
-
-
-@app.post("/api/recordings/start", status_code=201)
-def api_rec_start(body: RecordingStartIn):
-    try:
-        return app.state.recorder.start_manual(body.camera_id, body.minutes)
-    except recordings.RecordingError as exc:
-        raise HTTPException(exc.status, str(exc))
-
-
-@app.post("/api/recordings/stop")
-def api_rec_stop(body: RecordingStopIn):
-    return {"stopped": app.state.recorder.stop_manual(body.camera_id)}
-
-
-@app.get("/api/recordings/export.avi")
-def api_rec_export(camera_id: str = Query(..., max_length=100), start: str = Query(..., max_length=40), end: str = Query(..., max_length=40)):
-    from fastapi.responses import FileResponse
-    from starlette.background import BackgroundTask
-    if not _rec_call(lambda db: recordings.load_settings(db))["allow_export"]:
-        raise HTTPException(403, "L'export est désactivé dans les réglages d'enregistrement.")
-    try:
-        since, until = history.parse_datetime(start), history.parse_datetime(end)
-    except history.HistoryError as exc:
-        raise HTTPException(422, str(exc))
-    path = _rec_call(recordings.export_avi, camera_id, since, until, app.state.recorder.directory)
-    name = f"video-niifyeen-{recordings.safe_name(camera_id)}-{utcnow():%Y%m%d-%H%M%S}.avi"
-    return FileResponse(path, media_type="video/x-msvideo", filename=name,
-                        headers={"Cache-Control": "no-store"}, background=BackgroundTask(lambda: os.path.exists(path) and os.unlink(path)))
-
-
-@app.get("/api/recordings/for-event/{event_id}")
-def api_rec_for_event(event_id: int):
-    def find(db):
-        ev = db.get(Event, event_id)
-        if ev is None:
-            raise recordings.RecordingError("Événement introuvable.", 404)
-        if not ev.camera_id:
-            return {"available": False}
-        hit = recordings.find_for_time(db, ev.camera_id, ev.timestamp, app.state.recorder.directory)
-        return {"available": bool(hit), **(hit or {})}
-    return _rec_call(find)
-
-
-@app.get("/api/recordings")
-def api_rec_list(camera_id: str = Query("", max_length=100), minutes: int = Query(1440, ge=1, le=60 * 24 * 90),
-                 start: str = Query("", max_length=40), end: str = Query("", max_length=40), limit: int = Query(200, ge=1, le=500)):
-    since, until = _rec_range(minutes, start, end)
-    return {"recordings": _rec_call(recordings.list_recordings, camera_id, since, until, limit),
-            "status": app.state.recorder.status()}
-
-
-@app.get("/api/recordings/{rec_id}")
-def api_rec_get(rec_id: int):
-    return _rec_call(recordings.detail, rec_id, app.state.recorder.directory)
-
-
-@app.get("/api/recordings/{rec_id}/frame/{n}")
-def api_rec_frame(rec_id: int, n: int):
-    data = _rec_call(recordings.frame_bytes, rec_id, n, app.state.recorder.directory)
-    return Response(data, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=60"})
-
-
-@app.delete("/api/recordings/{rec_id}")
-def api_rec_delete(rec_id: int):
-    _rec_call(recordings.delete_recording, rec_id, app.state.recorder.directory, set(app.state.recorder.active().values()))
-    return {"deleted": True}
-
-
-# ---------- Historique et investigation (Module 8) ----------
-class DossierIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    title: Optional[str] = None
-    note: Optional[str] = None
-
-
-class DossierItemIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    kind: str
-    ref_id: int
-    note: Optional[str] = None
-
-
-class DossierItemNoteIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    note: Optional[str] = None
-
-
-def _inv_call(fn, *args, **kwargs):
-    db = SessionLocal()
-    try:
-        return fn(db, *args, **kwargs)
-    except investigation.InvestigationError as exc:
-        raise HTTPException(exc.status, str(exc))
-    finally:
-        db.close()
-
-
-def _camera_labels() -> dict:
-    return {cid: (m or {}).get("label") or cid for cid, m in (app.state.camera_meta or {}).items()}
-
-
-def _inv_run(minutes, start, end, camera_id, types, participant_id, target_id, session, q, only_alerts, limit=investigation.MAX_ITEMS):
-    """Exécute une recherche de chronologie et retourne (résultat, description des filtres)."""
-    db = SessionLocal()
-    try:
-        since, until = history.resolve_range(minutes, start or None, end or None)
-        result = investigation.timeline(db, since, until, camera_id, investigation.parse_types(types), participant_id,
-                                        target_id, session, q, only_alerts, limit)
-    except history.HistoryError as exc:
-        raise HTTPException(422, str(exc))
-    except investigation.InvestigationError as exc:
-        raise HTTPException(exc.status, str(exc))
-    finally:
-        db.close()
-    labels = _camera_labels()
-    parts = []
-    if camera_id:
-        parts.append("caméra : " + labels.get(camera_id, camera_id))
-    if types:
-        parts.append("types : " + types)
-    if participant_id is not None:
-        parts.append(f"personne n°{participant_id}")
-    if target_id is not None:
-        parts.append(f"cible n°{target_id}")
-    if session is not None:
-        parts.append(f"session de cible n°{session}")
-    if q:
-        parts.append(f"texte : « {q} »")
-    if only_alerts:
-        parts.append("événements ayant donné une alerte")
-    return result, ("Filtres : " + " ; ".join(parts) + ".") if parts else "Aucun filtre particulier."
-
-
-_INV_FILTERS = dict(minutes=Query(60, ge=1, le=60 * 24 * 90), start=Query("", max_length=40), end=Query("", max_length=40),
-                    camera_id=Query("", max_length=100), types=Query("", max_length=400),
-                    participant_id=Query(None, ge=1), target_id=Query(None, ge=1), session=Query(None, ge=0),
-                    q=Query("", max_length=100), only_alerts=Query(False))
-
-
-@app.get("/api/investigation/timeline")
-def api_inv_timeline(minutes: int = _INV_FILTERS["minutes"], start: str = _INV_FILTERS["start"], end: str = _INV_FILTERS["end"],
-                     camera_id: str = _INV_FILTERS["camera_id"], types: str = _INV_FILTERS["types"],
-                     participant_id: int = _INV_FILTERS["participant_id"], target_id: int = _INV_FILTERS["target_id"],
-                     session: int = _INV_FILTERS["session"], q: str = _INV_FILTERS["q"],
-                     only_alerts: bool = _INV_FILTERS["only_alerts"], limit: int = Query(500, ge=1, le=500)):
-    return _inv_run(minutes, start, end, camera_id, types, participant_id, target_id, session, q, only_alerts, limit)[0]
-
-
-@app.get("/api/investigation/timeline.csv")
-def api_inv_csv(minutes: int = _INV_FILTERS["minutes"], start: str = _INV_FILTERS["start"], end: str = _INV_FILTERS["end"],
-                camera_id: str = _INV_FILTERS["camera_id"], types: str = _INV_FILTERS["types"],
-                participant_id: int = _INV_FILTERS["participant_id"], target_id: int = _INV_FILTERS["target_id"],
-                session: int = _INV_FILTERS["session"], q: str = _INV_FILTERS["q"],
-                only_alerts: bool = _INV_FILTERS["only_alerts"]):
-    result, _ = _inv_run(minutes, start, end, camera_id, types, participant_id, target_id, session, q, only_alerts)
-    name = f"investigation-niifyeen-{utcnow():%Y%m%d-%H%M%S}.csv"
-    return StreamingResponse(investigation.iter_csv(result), media_type="text/csv; charset=utf-8",
-                             headers={"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
-
-
-def _pdf_response(make, name: str):
-    try:
-        data = make()
-    except pdf_report.PdfUnavailable as exc:
-        raise HTTPException(501, str(exc))
-    return Response(data, media_type="application/pdf",
-                    headers={"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
-
-
-@app.get("/api/investigation/report.pdf")
-def api_inv_report(minutes: int = _INV_FILTERS["minutes"], start: str = _INV_FILTERS["start"], end: str = _INV_FILTERS["end"],
-                   camera_id: str = _INV_FILTERS["camera_id"], types: str = _INV_FILTERS["types"],
-                   participant_id: int = _INV_FILTERS["participant_id"], target_id: int = _INV_FILTERS["target_id"],
-                   session: int = _INV_FILTERS["session"], q: str = _INV_FILTERS["q"],
-                   only_alerts: bool = _INV_FILTERS["only_alerts"]):
-    """Rapport PDF des résultats ; avec ``session``, c'est le rapport de session de cible."""
-    result, description = _inv_run(minutes, start, end, camera_id, types, participant_id, target_id, session, q, only_alerts)
-    title = f"Rapport de session de cible n°{session}" if session is not None else "Rapport d'investigation"
-    return _pdf_response(lambda: investigation.timeline_pdf(result, _camera_labels(), description, title),
-                         f"rapport-niifyeen-{utcnow():%Y%m%d-%H%M%S}.pdf")
-
-
-@app.get("/api/investigation/events/{event_id}")
-def api_inv_event(event_id: int):
-    return _inv_call(investigation.event_detail, event_id, 60, app.state.recorder.directory)
-
-
-@app.get("/api/dossiers")
-def api_dossiers():
-    return {"dossiers": _inv_call(investigation.list_dossiers), "max": investigation.MAX_DOSSIERS}
-
-
-@app.post("/api/dossiers", status_code=201)
-def api_dossier_create(body: DossierIn):
-    return _inv_call(investigation.create_dossier, body.title, body.note)
-
-
-@app.get("/api/dossiers/{dossier_id}")
-def api_dossier_get(dossier_id: int):
-    return _inv_call(investigation.get_dossier, dossier_id)
-
-
-@app.put("/api/dossiers/{dossier_id}")
-def api_dossier_update(dossier_id: int, body: DossierIn):
-    return _inv_call(investigation.update_dossier, dossier_id, {k: getattr(body, k) for k in body.model_fields_set})
-
-
-@app.delete("/api/dossiers/{dossier_id}")
-def api_dossier_delete(dossier_id: int):
-    _inv_call(investigation.delete_dossier, dossier_id)
-    return {"deleted": True}
-
-
-@app.post("/api/dossiers/{dossier_id}/items", status_code=201)
-def api_dossier_add(dossier_id: int, body: DossierItemIn):
-    return _inv_call(investigation.add_item, dossier_id, body.kind, body.ref_id, body.note)
-
-
-@app.put("/api/dossiers/{dossier_id}/items/{item_id}")
-def api_dossier_item_note(dossier_id: int, item_id: int, body: DossierItemNoteIn):
-    _inv_call(investigation.update_item, dossier_id, item_id, body.note)
-    return {"updated": True}
-
-
-@app.delete("/api/dossiers/{dossier_id}/items/{item_id}")
-def api_dossier_item_remove(dossier_id: int, item_id: int):
-    _inv_call(investigation.remove_item, dossier_id, item_id)
-    return {"deleted": True}
-
-
-@app.get("/api/dossiers/{dossier_id}/report.pdf")
-def api_dossier_report(dossier_id: int):
-    dossier = _inv_call(investigation.get_dossier, dossier_id)
-    return _pdf_response(lambda: investigation.dossier_pdf(dossier, _camera_labels()),
-                         f"dossier-{dossier_id}-niifyeen-{utcnow():%Y%m%d}.pdf")
-
-
 # ---------- Centre d'alertes (Module 7) ----------
 class AlertStatusIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -1260,6 +723,31 @@ def api_alert_rules():
         return {"rules": alerts.rules_view(alerts.load_rules(db)), "priorities": list(alerts.PRIORITIES)}
     finally:
         db.close()
+
+
+class AlertScopeIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    targets_only: bool
+
+
+@app.get("/api/alerts/scope")
+def api_alert_scope():
+    db = SessionLocal()
+    try:
+        return {"targets_only": alerts.targets_only(db)}
+    finally:
+        db.close()
+
+
+@app.put("/api/alerts/scope")
+def api_alert_scope_save(body: AlertScopeIn):
+    db = SessionLocal()
+    try:
+        value = alerts.set_targets_only(db, body.targets_only)
+    finally:
+        db.close()
+    app.state.alerts.invalidate()
+    return {"targets_only": value}
 
 
 @app.put("/api/alerts/rules")
@@ -1329,108 +817,6 @@ def api_alert_note(alert_id: int, body: AlertNoteIn):
         return alerts.add_note(db, alert_id, body.note)
     except alerts.AlertError as exc:
         raise _alert_http(exc)
-    finally:
-        db.close()
-
-
-# ---------- Lignes, zones et affluence (Module 6) ----------
-class ZoneIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    camera_id: Optional[str] = None
-    kind: Optional[str] = None
-    name: Optional[str] = None
-    points: Optional[list] = None
-    label_in: Optional[str] = None
-    label_out: Optional[str] = None
-    capacity: Optional[int] = None
-    restricted: Optional[bool] = None
-    max_dwell_sec: Optional[int] = None
-    enabled: Optional[bool] = None
-
-
-def _zone_http(exc: analytics.ZoneError) -> HTTPException:
-    return HTTPException(exc.status, str(exc))
-
-
-@app.get("/api/zones")
-def api_list_zones(camera_id: str = Query("", max_length=100)):
-    db = SessionLocal()
-    try:
-        return {"zones": analytics.list_zones(db, camera_id or None), "max_per_camera": analytics.MAX_ZONES_PER_CAMERA}
-    finally:
-        db.close()
-
-
-@app.post("/api/zones", status_code=201)
-def api_create_zone(body: ZoneIn):
-    data = {k: getattr(body, k) for k in body.model_fields_set}
-    db = SessionLocal()
-    try:
-        row = analytics.create_zone(db, data, list(app.state.cams.keys()))
-        out = analytics.view(row)
-    except analytics.ZoneError as exc:
-        raise _zone_http(exc)
-    finally:
-        db.close()
-    app.state.analytics.reload()
-    return out
-
-
-@app.put("/api/zones/{zone_id}")
-def api_update_zone(zone_id: int, body: ZoneIn):
-    data = {k: getattr(body, k) for k in body.model_fields_set}
-    db = SessionLocal()
-    try:
-        out = analytics.view(analytics.update_zone(db, zone_id, data))
-    except analytics.ZoneError as exc:
-        raise _zone_http(exc)
-    finally:
-        db.close()
-    app.state.analytics.reload()
-    return out
-
-
-@app.delete("/api/zones/{zone_id}")
-def api_delete_zone(zone_id: int):
-    db = SessionLocal()
-    try:
-        analytics.delete_zone(db, zone_id)
-    except analytics.ZoneError as exc:
-        raise _zone_http(exc)
-    finally:
-        db.close()
-    app.state.analytics.reload()
-    return {"deleted": True}
-
-
-@app.get("/api/analytics/live")
-def api_analytics_live():
-    """Occupation et compteurs depuis le démarrage du moteur (estimations), état des caméras (masquée / figée)."""
-    return app.state.analytics.snapshot()
-
-
-@app.get("/api/analytics/zones/{zone_id}/series")
-def api_zone_series(zone_id: int, minutes: int = Query(180, ge=5, le=60 * 24 * 30)):
-    app.state.analytics.flush()
-    until = utcnow()
-    db = SessionLocal()
-    try:
-        analytics.get_zone(db, zone_id)
-        return {"zone_id": zone_id, "bucket_sec": analytics.BUCKET_SEC,
-                "series": analytics.series(db, zone_id, analytics.bucket_start(until - timedelta(minutes=minutes)), until)}
-    except analytics.ZoneError as exc:
-        raise _zone_http(exc)
-    finally:
-        db.close()
-
-
-@app.get("/api/analytics/overview")
-def api_analytics_overview(minutes: int = Query(60, ge=5, le=60 * 24 * 30)):
-    app.state.analytics.flush()
-    until = utcnow()
-    db = SessionLocal()
-    try:
-        return {"minutes": minutes, "items": analytics.overview(db, analytics.bucket_start(until - timedelta(minutes=minutes)), until)}
     finally:
         db.close()
 

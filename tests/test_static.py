@@ -45,69 +45,9 @@ class StaticPagesTests(unittest.TestCase):
                 self.assertIn(route, js)
         self.assertIn('href: "/map"', (STATIC / "shell.js").read_text(encoding="utf-8"))
 
-    def test_zones_page_is_wired_and_linked(self):
-        html = (STATIC / "zones.html").read_text(encoding="utf-8")
-        for needle in ('src="/static/shell.js"', 'src="/static/zones-logic.js"', 'src="/static/zones.js"',
-                       'id="overlay"', 'id="feed"', 'id="camSelect"', 'id="edForm"', 'id="chart"'):
-            with self.subTest(needle=needle):
-                self.assertIn(needle, html)
-        js = (STATIC / "zones.js").read_text(encoding="utf-8")
-        for route in ("/api/zones", "/api/analytics/live", "/api/analytics/overview", "/series", "/video/"):
-            with self.subTest(route=route):
-                self.assertIn(route, js)
-        self.assertIn('href: "/zones"', (STATIC / "shell.js").read_text(encoding="utf-8"))
 
-    def test_recordings_page_is_wired_and_linked(self):
-        html = (STATIC / "recordings.html").read_text(encoding="utf-8")
-        for needle in ('src="/static/shell.js"', 'src="/static/recordings-logic.js"', 'src="/static/recordings.js"',
-                       'id="rows"', 'id="pImg"', 'id="pSlider"', 'id="sSave"', 'id="mStart"', 'id="pExport"'):
-            with self.subTest(needle=needle):
-                self.assertIn(needle, html)
-        js = (STATIC / "recordings.js").read_text(encoding="utf-8")
-        for route in ("/api/recordings", "/api/recordings/settings", "/api/recordings/status", "/api/recordings/start",
-                      "/api/recordings/stop", "/export.avi", "/frame/", "/api/investigation/timeline"):
-            with self.subTest(route=route):
-                self.assertIn(route, js)
-        self.assertIn('href: "/recordings"', (STATIC / "shell.js").read_text(encoding="utf-8"))
-        self.assertIn("recordings-logic.js", (STATIC / "investigation.html").read_text(encoding="utf-8"))
 
-    def test_statistics_page_is_wired_and_linked(self):
-        html = (STATIC / "statistics.html").read_text(encoding="utf-8")
-        for needle in ('src="/static/shell.js"', 'src="/static/statistics-logic.js"', 'src="/static/statistics.js"',
-                       'id="kpis"', 'id="hourChart"', 'id="heat"', 'id="graph"', 'id="cmpRows"', 'id="csv"'):
-            with self.subTest(needle=needle):
-                self.assertIn(needle, html)
-        js = (STATIC / "statistics.js").read_text(encoding="utf-8")
-        for route in ("/api/stats/overview", "/api/stats/compare", "/api/stats/transitions", "/api/stats/heatmap"):
-            with self.subTest(route=route):
-                self.assertIn(route, js)
-        self.assertIn('href: "/statistics"', (STATIC / "shell.js").read_text(encoding="utf-8"))
 
-    def test_demo_page_is_wired_and_banner_is_in_shell(self):
-        html = (STATIC / "demo.html").read_text(encoding="utf-8")
-        for needle in ('src="/static/shell.js"', 'src="/static/demo.js"', 'id="script"', 'id="restart"', 'id="reset"', 'id="off"'):
-            with self.subTest(needle=needle):
-                self.assertIn(needle, html)
-        js = (STATIC / "demo.js").read_text(encoding="utf-8")
-        for route in ("/api/demo", "/api/demo/restart", "/api/demo/reset"):
-            with self.subTest(route=route):
-                self.assertIn(route, js)
-        shell = (STATIC / "shell.js").read_text(encoding="utf-8")
-        self.assertIn("demoBanner", shell)
-        self.assertIn("MODE DÉMONSTRATION", shell)
-        self.assertNotIn('href: "/demo"', shell.split("function mount")[0])     # entrée de menu ajoutée seulement en démonstration
-
-    def test_reports_page_is_wired_and_linked(self):
-        html = (STATIC / "reports.html").read_text(encoding="utf-8")
-        for needle in ('src="/static/shell.js"', 'src="/static/statistics-logic.js"', 'src="/static/reports.js"',
-                       'id="preview"', 'id="sections"', 'id="pdf"', 'id="tplSave"', 'id="camera"'):
-            with self.subTest(needle=needle):
-                self.assertIn(needle, html)
-        js = (STATIC / "reports.js").read_text(encoding="utf-8")
-        for route in ("/api/reports/options", "/api/reports/preview", "/api/reports/report.pdf", "/api/reports/templates/"):
-            with self.subTest(route=route):
-                self.assertIn(route, js)
-        self.assertIn('href: "/reports"', (STATIC / "shell.js").read_text(encoding="utf-8"))
 
     def test_alerts_page_is_wired_and_linked(self):
         html = (STATIC / "alerts.html").read_text(encoding="utf-8")
@@ -123,18 +63,6 @@ class StaticPagesTests(unittest.TestCase):
         self.assertIn('href: "/alerts"', shell)
         self.assertIn("/api/alerts/summary", shell)
 
-    def test_investigation_page_is_wired_and_linked(self):
-        html = (STATIC / "investigation.html").read_text(encoding="utf-8")
-        for needle in ('src="/static/shell.js"', 'src="/static/plan.js"', 'src="/static/map-logic.js"',
-                       'src="/static/investigation-logic.js"', 'src="/static/investigation.js"',
-                       'id="tl"', 'id="rows"', 'id="dPlan"', 'id="dVideo"', 'id="dossierSel"', 'id="btnPdf"', 'id="btnCsv"'):
-            with self.subTest(needle=needle):
-                self.assertIn(needle, html)
-        js = (STATIC / "investigation.js").read_text(encoding="utf-8")
-        for route in ("/api/investigation/timeline", "/api/investigation/events/", "/api/dossiers", "/api/floors", "/api/people", "report.pdf"):
-            with self.subTest(route=route):
-                self.assertIn(route, js)
-        self.assertIn('href: "/investigation"', (STATIC / "shell.js").read_text(encoding="utf-8"))
 
     def test_plan_is_wired_into_the_cameras_page(self):
         html = (STATIC / "cameras.html").read_text(encoding="utf-8")
@@ -247,7 +175,7 @@ class StaticPagesTests(unittest.TestCase):
     def test_legacy_pages_use_the_design_system(self):
         """Module 13 : les quatre anciennes pages passent par la coque commune (menu, thème) et plus par layout.css."""
         shell = (STATIC / "shell.js").read_text(encoding="utf-8")
-        for page, key in (("index.html", "home"), ("cameras.html", "cameras"), ("logs.html", "logs"), ("history.html", "history")):
+        for page, key in (("index.html", "home"), ("cameras.html", "cameras"), ("history.html", "history")):
             html = (STATIC / page).read_text(encoding="utf-8")
             with self.subTest(page=page):
                 for needle in ('href="/static/app.css"', 'href="/static/legacy.css"', 'src="/static/shell.js"', 'id="sidebar"',

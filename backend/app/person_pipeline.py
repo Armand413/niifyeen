@@ -518,6 +518,7 @@ class PersonPipeline:
                         st["locked_target_id"] = rec["target_id"]
                         target_id = rec["target_id"] if mode == "TARGET" else None
                         st["locked_until"] = now + self.lock_hold_sec
+                        st["face_ts"] = now                    # dernière fois que le visage a confirmé l'identité
                         if mode == "DB":
                             # Au sein d'une même piste, le meilleur cliché fait foi : une image floue ensuite ne
                             # dégrade pas une correspondance « probable » déjà obtenue pour la même personne.
@@ -538,6 +539,10 @@ class PersonPipeline:
                         db_score = rec["db_score"]
                         st["last_db_score"] = db_score
 
+            # Identité conservée grâce au suivi de la silhouette (visage non visible depuis un moment) ?
+            face_age = (now - st["face_ts"]) if mode in ("TARGET", "DB") and "face_ts" in st else None
+            tracked_only = face_age is not None and face_age > max(2.0, 3 * self.recog_every_sec)
+
             # overlay
             if mode == "TARGET":
                 color = target_colors.get(target_id, (0, 0, 255))
@@ -556,6 +561,8 @@ class PersonPipeline:
                 color = (120, 120, 120)
                 txt = f"{self.camera_id} | track {tid} | gid={global_id or '-'}"
 
+            if tracked_only:
+                txt += " ~suivi"                       # identité reportée sans visage visible : moins sûre
             cv2.rectangle(frame_draw, (int(x1s), int(y1s)), (int(x2s), int(y2s)), color, 2)
             cv2.putText(frame_draw, txt, (int(x1s), max(18, int(y1s) - 8)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
@@ -579,6 +586,8 @@ class PersonPipeline:
                 "match_ambiguous": bool(match["ambiguous"]) if mode == "DB" and match else False,
                 "target_score": target_score,
                 "db_score": db_score,
+                "tracked_only": bool(tracked_only),
+                "face_age": None if face_age is None else round(float(face_age), 1),
                 "x": cx, "y": cy,
                 # Point au sol (milieu du bas du cadre) : référence des lignes et zones du Module 6.
                 "fx": float((x1s + x2s) / 2.0) / float(self.out_w), "fy": float(y2s) / float(self.out_h),

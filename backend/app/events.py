@@ -33,11 +33,6 @@ CAMERA_DISABLED = "camera_disabled"
 CAMERA_OBSTRUCTED = "camera_obstructed"      # image uniforme (objectif couvert, écran noir…)
 CAMERA_CLEARED = "camera_cleared"
 CAMERA_FROZEN = "camera_frozen"              # images strictement identiques (flux figé)
-LINE_CROSSED = "line_crossed"
-ZONE_OVERCROWDED = "zone_overcrowded"
-ZONE_CLEARED = "zone_cleared"
-ZONE_INTRUSION = "zone_intrusion"
-ZONE_LOITERING = "zone_loitering"            # présence prolongée dans une zone
 
 # Familles utilisées par le filtre de l'interface.
 FAMILIES = {
@@ -45,7 +40,6 @@ FAMILIES = {
     "people": (PERSON_RECOGNIZED, PERSON_INACTIVE),
     "cameras": (CAMERA_OFFLINE, CAMERA_ONLINE, CAMERA_ADDED, CAMERA_REMOVED, CAMERA_ENABLED, CAMERA_DISABLED,
                 CAMERA_OBSTRUCTED, CAMERA_CLEARED, CAMERA_FROZEN),
-    "analytics": (LINE_CROSSED, ZONE_OVERCROWDED, ZONE_CLEARED, ZONE_INTRUSION, ZONE_LOITERING),
 }
 
 

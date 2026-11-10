@@ -48,10 +48,6 @@ TYPES = {
     "camera_offline": ("Caméra hors ligne", "camera"),
     "camera_obstructed": ("Caméra masquée ou image uniforme", "camera"),
     "camera_frozen": ("Flux figé", "camera"),
-    "line_crossed": ("Franchissement de ligne", "analytics"),
-    "zone_overcrowded": ("Seuil de fréquentation dépassé", "analytics"),
-    "zone_intrusion": ("Intrusion en zone interdite", "analytics"),
-    "zone_loitering": ("Présence prolongée en zone", "analytics"),
 }
 
 # Règles par défaut. Les franchissements de ligne et les reconnaissances simples sont désactivés : ils sont
@@ -65,12 +61,9 @@ DEFAULT_RULES: Dict[str, Dict[str, Any]] = {
     "camera_offline": dict(enabled=True, priority="high", dedup_sec=120, sound=True, notify=True),
     "camera_obstructed": dict(enabled=True, priority="high", dedup_sec=300, sound=True, notify=True),
     "camera_frozen": dict(enabled=True, priority="high", dedup_sec=300, sound=True, notify=True),
-    "line_crossed": dict(enabled=False, priority="low", dedup_sec=10, sound=False, notify=False),
-    "zone_overcrowded": dict(enabled=True, priority="high", dedup_sec=300, sound=True, notify=True),
-    "zone_intrusion": dict(enabled=True, priority="critical", dedup_sec=20, sound=True, notify=True),
-    "zone_loitering": dict(enabled=True, priority="medium", dedup_sec=120, sound=True, notify=False),
 }
 RULES_KEY = "alert_rules"
+SCOPE_KEY = "alerts_targets_only"     # « 1 » (par défaut) : seules les alertes liées aux cibles sont créées
 MAX_DEDUP_SEC = 86400
 MAX_NOTE = 500
 MAX_BULK = 200
@@ -110,7 +103,25 @@ def validate_rule(type_: str, data: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
-def load_rules(db) -> Dict[str, Dict[str, Any]]:
+def targets_only(db) -> bool:
+    """Vrai par défaut : seuls les événements de la catégorie « Cibles » donnent une alerte."""
+    row = db.get(Setting, SCOPE_KEY)
+    return not (row and (row.value or "").strip() == "0")
+
+
+def set_targets_only(db, value: bool) -> bool:
+    if not isinstance(value, bool):
+        raise AlertError("« targets_only » doit être vrai ou faux.", field="targets_only")
+    row = db.get(Setting, SCOPE_KEY)
+    if row is None:
+        db.add(Setting(key=SCOPE_KEY, value="1" if value else "0"))
+    else:
+        row.value = "1" if value else "0"
+    db.commit()
+    return value
+
+
+def load_rules(db, enforce: bool = True) -> Dict[str, Dict[str, Any]]:
     rules = {k: dict(v) for k, v in DEFAULT_RULES.items()}
     row = db.get(Setting, RULES_KEY)
     if row and row.value:
@@ -124,6 +135,11 @@ def load_rules(db) -> Dict[str, Dict[str, Any]]:
                     rules[type_].update(validate_rule(type_, data))
                 except AlertError:
                     continue                                  # réglage enregistré devenu invalide : valeur par défaut
+    only = enforce and targets_only(db)
+    for type_, rule in rules.items():
+        rule["locked"] = only and TYPES[type_][1] != "target"
+        if rule["locked"]:
+            rule["enabled"] = False                           # hors cibles : aucune alerte tant que le mode « cibles seulement » est actif
     return rules
 
 
@@ -135,17 +151,17 @@ def save_rules(db, changes: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, An
         if type_ not in TYPES:
             raise AlertError(f"Type d'alerte inconnu : {type_}", field=str(type_)[:40])
         clean[type_] = validate_rule(type_, data)
-    rules = load_rules(db)
+    rules = load_rules(db, enforce=False)               # les réglages enregistrés ne dépendent pas du mode « cibles seulement »
     for type_, data in clean.items():
         rules[type_].update(data)
-    value = json.dumps({k: v for k, v in rules.items()})
+    value = json.dumps({k: {a: b for a, b in v.items() if a != "locked"} for k, v in rules.items()})
     row = db.get(Setting, RULES_KEY)
     if row is None:
         db.add(Setting(key=RULES_KEY, value=value))
     else:
         row.value = value
     db.commit()
-    return rules
+    return load_rules(db)
 
 
 def rules_view(rules: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:

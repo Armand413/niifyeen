@@ -186,7 +186,8 @@
     var body = $("rulesBody"); body.replaceChildren();
     state.rules.forEach(function (r) {
       var tr = el("tr"); tr.setAttribute("data-rule", r.type);
-      var on = checkbox(r.enabled, "Actif : " + r.label), snd = checkbox(r.sound, "Son : " + r.label), ext = checkbox(r.notify, "Notification externe : " + r.label);
+      var on = checkbox(r.enabled, "Actif : " + r.label); on.disabled = !!r.locked; if (r.locked) tr.className = "muted";
+      var snd = checkbox(r.sound, "Son : " + r.label), ext = checkbox(r.notify, "Notification externe : " + r.label);
       var pr = el("select"); pr.setAttribute("aria-label", "Priorité : " + r.label);
       state.priorities.forEach(function (p) { var o = el("option", L.priorityLabel(p)); o.value = p; pr.appendChild(o); });
       pr.value = r.priority;
@@ -196,7 +197,9 @@
         var td = cell[0].tagName === "TD" ? cell[0] : el("td"); if (i) td.appendChild(cell[0]); tr.appendChild(td);
       });
       tr._get = function () {
-        return { enabled: on.checked, priority: pr.value, dedup_sec: Number(dd.value), sound: snd.checked, notify: ext.checked };
+        var out = { priority: pr.value, dedup_sec: Number(dd.value), sound: snd.checked, notify: ext.checked };
+        if (!r.locked) out.enabled = on.checked;          // verrouillée : on ne change pas son réglage « actif » enregistré
+        return out;
       };
       body.appendChild(tr);
     });
@@ -213,6 +216,21 @@
     api("PUT", "/api/alerts/rules", { rules: rules }).then(function (res) {
       if (!res.ok) { Shell.toast(errorText(res), "warning"); return; }
       state.rules = res.data.rules; renderRules(); Shell.toast("Règles enregistrées.");
+    });
+  }
+
+  function loadScope() {
+    return api("GET", "/api/alerts/scope").then(function (res) {
+      if (res.ok) $("scopeTargets").checked = !!res.data.targets_only;
+    });
+  }
+
+  function saveScope() {
+    var box = $("scopeTargets"), want = box.checked;
+    api("PUT", "/api/alerts/scope", { targets_only: want }).then(function (res) {
+      if (!res.ok) { box.checked = !want; Shell.toast(errorText(res), "warning"); return; }
+      Shell.toast(want ? "Alertes limitées aux cibles." : "Toutes les alertes activées dans les règles sont créées.");
+      loadRules();
     });
   }
 
@@ -283,11 +301,12 @@
     $("dNoteBtn").addEventListener("click", saveNote);
     $("dNote").addEventListener("keydown", function (ev) { if (ev.key === "Enter") { ev.preventDefault(); saveNote(); } });
     $("rulesSave").addEventListener("click", saveRules);
+    $("scopeTargets").addEventListener("change", saveScope);
     $("testEmail").addEventListener("click", function () { testChannel("email"); });
     $("testTelegram").addEventListener("click", function () { testChannel("telegram"); });
 
     var cat = $("fCategory");
-    [["target", "Cibles"], ["people", "Personnes"], ["camera", "Caméras"], ["analytics", "Lignes et zones"]].forEach(function (c) {
+    [["target", "Cibles"], ["people", "Personnes"], ["camera", "Caméras"]].forEach(function (c) {
       var o = el("option", c[1]); o.value = c[0]; cat.appendChild(o);
     });
     api("GET", "/api/cameras").then(function (res) {
@@ -296,7 +315,7 @@
       (res.ok ? res.data.cameras : []).forEach(function (id) { var o = el("option", cameraLabel(id)); o.value = id; sel.appendChild(o); });
       loadList(false);
     });
-    loadRules(); loadChannels();
+    loadScope(); loadRules(); loadChannels();
     setInterval(function () { loadList(false).then(function () { if (state.selected) { var s = state.selected; api("GET", "/api/alerts/" + s).then(function (r) { if (r.ok && state.selected === s) renderDetail(r.data); }); } }); }, 5000);
   }
 

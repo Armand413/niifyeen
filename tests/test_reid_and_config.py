@@ -111,3 +111,20 @@ class ConfigTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class IdentityHoldConfigTest(unittest.TestCase):
+    def test_default_and_bounds(self):
+        import importlib, os
+        from backend.app import config
+        try:
+            os.environ["NIIFYEEN_IDENTITY_HOLD_SEC"] = "9999"
+            importlib.reload(config)
+            self.assertEqual(config.IDENTITY_HOLD_SEC, 300.0)
+            os.environ["NIIFYEEN_IDENTITY_HOLD_SEC"] = "0"
+            importlib.reload(config)
+            self.assertEqual(config.IDENTITY_HOLD_SEC, 1.0)
+        finally:
+            os.environ.pop("NIIFYEEN_IDENTITY_HOLD_SEC", None)
+            importlib.reload(config)
+        self.assertEqual(config.IDENTITY_HOLD_SEC, 20.0)
