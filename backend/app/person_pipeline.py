@@ -58,6 +58,9 @@ class PersonPipeline:
 
         self.latest_jpeg: Optional[bytes] = None          # image annotée (cadres, noms)
         self.latest_jpeg_raw: Optional[bytes] = None      # image sans annotations (encodée seulement si demandée)
+        # Gros plan (sans annotation) de chaque cible vue récemment : identifiant de cible -> (instant, JPEG).
+        # Gardé en mémoire seulement ; sert à illustrer l'alerte envoyée à l'autorité.
+        self.latest_target_crops: Dict[int, Tuple[float, bytes]] = {}
         self.frame_seq: int = 0                           # +1 à chaque nouvelle image publiée
         self.raw_seq: int = 0                             # = frame_seq quand l'image brute est à jour
         self.latest_events: List[Dict[str, Any]] = []
@@ -297,6 +300,32 @@ class PersonPipeline:
                  "status": status, "active": bool(best.get("active", True)), "ambiguous": ambiguous},
                 float(best_sim))
 
+    def _remember_target_crop(self, target_id: int, frame_small, box, now: float) -> None:
+        """Garde un gros plan net (sans cadre ni texte) de la cible, rafraîchi au plus une fois par seconde."""
+        previous = self.latest_target_crops.get(target_id)
+        if previous is not None and now - previous[0] < 1.0:
+            return
+        h, w = frame_small.shape[:2]
+        x1, y1, x2, y2 = box
+        pad_x, pad_y = 0.08 * (x2 - x1), 0.05 * (y2 - y1)
+        x1, x2 = int(max(0, x1 - pad_x)), int(min(w, x2 + pad_x))
+        y1, y2 = int(max(0, y1 - pad_y)), int(min(h, y2 + pad_y))
+        if x2 - x1 < 8 or y2 - y1 < 8:
+            return
+        crop = frame_small[y1:y2, x1:x2]
+        if crop.shape[0] < 320:                       # agrandi pour être lisible sur un téléphone (aucune information ajoutée)
+            scale = min(320.0 / crop.shape[0], 480.0 / crop.shape[1])
+            crop = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+        ok, jpg = cv2.imencode(".jpg", crop, [int(cv2.IMWRITE_JPEG_QUALITY), 88])
+        if ok:
+            self.latest_target_crops[target_id] = (now, jpg.tobytes())
+            for key in [k for k, (t, _) in self.latest_target_crops.items() if now - t > 120.0]:
+                del self.latest_target_crops[key]
+
+    def target_crop(self, target_id: int, max_age_sec: float = 10.0) -> Optional[bytes]:
+        item = self.latest_target_crops.get(target_id)
+        return item[1] if item is not None and time.time() - item[0] <= max_age_sec else None
+
     @staticmethod
     def _clamp(v, lo, hi):
         return max(lo, min(hi, v))
@@ -329,6 +358,18 @@ class PersonPipeline:
 
         return frame_full[hy1:hy2, hx1:hx2]
 
+    @staticmethod
+    def _usable_face(face) -> bool:
+        """Visage assez grand et assez net pour être comparé (sinon l'empreinte est trop bruitée)."""
+        try:
+            x1, y1, x2, y2 = (float(v) for v in face.bbox[:4])
+        except (TypeError, ValueError, AttributeError):
+            return False
+        if min(x2 - x1, y2 - y1) < config.FACE_MIN_SIZE_PX:
+            return False
+        score = getattr(face, "det_score", None)
+        return score is None or float(score) >= config.FACE_MIN_DET_SCORE
+
     def _recognize_from_crop(self, head_crop_bgr: np.ndarray) -> Dict[str, Any]:
         """
         Retourne un dict :
@@ -342,11 +383,12 @@ class PersonPipeline:
         """
         targets = self._get_targets()
         result = {"mode": "UNK", "label": None, "target_score": None, "db_score": None, "global_id": None,
-                  "target_id": None, "match": None}
+                  "target_id": None, "match": None, "face_seen": False}
 
-        faces = detect_faces_safe(head_crop_bgr)
+        faces = [f for f in (detect_faces_safe(head_crop_bgr) or []) if self._usable_face(f)]
         if not faces:
             return result
+        result["face_seen"] = True
 
         faces = sorted(
             faces,
@@ -510,7 +552,17 @@ class PersonPipeline:
                         global_id = rec["global_id"]
                         st["global_id"] = global_id
 
-                    if rec["mode"] in ("TARGET", "DB"):
+                    if rec["mode"] == "UNK" and rec["face_seen"] and st.get("locked_until", 0.0) > now:
+                        # Un visage net est visible et ne correspond à personne : l'identité reportée est sans doute celle
+                        # d'une autre personne (échange de piste, croisement). Retirée après quelques confirmations.
+                        st["contradictions"] = st.get("contradictions", 0) + 1
+                        if st["contradictions"] >= config.IDENTITY_CONTRADICTIONS:
+                            for key in ("locked_until", "locked_mode", "locked_label", "locked_target_id", "match", "face_ts",
+                                        "contradictions"):
+                                st.pop(key, None)
+                            mode, label, target_id, match = "UNK", None, None, None
+                    elif rec["mode"] in ("TARGET", "DB"):
+                        st["contradictions"] = 0
                         mode = rec["mode"]
                         label = rec["label"]
                         st["locked_mode"] = mode
@@ -563,6 +615,8 @@ class PersonPipeline:
 
             if tracked_only:
                 txt += " ~suivi"                       # identité reportée sans visage visible : moins sûre
+            if mode == "TARGET" and target_id is not None:
+                self._remember_target_crop(target_id, frame_small, (x1s, y1s, x2s, y2s), now)
             cv2.rectangle(frame_draw, (int(x1s), int(y1s)), (int(x2s), int(y2s)), color, 2)
             cv2.putText(frame_draw, txt, (int(x1s), max(18, int(y1s) - 8)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)

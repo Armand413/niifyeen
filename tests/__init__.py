@@ -17,6 +17,7 @@ atexit.register(shutil.rmtree, _TMP, ignore_errors=True)
 
 os.environ["NIIFYEEN_DB"] = os.path.join(_TMP, "test.db")
 os.environ["NIIFYEEN_RECORDINGS_DIR"] = os.path.join(_TMP, "recordings")
+os.environ["NIIFYEEN_INBOX_ENABLED"] = "0"          # pas de second serveur pendant les tests
 os.environ["NIIFYEEN_CAMERAS_FILE"] = os.path.join(_TMP, "cameras.json")
 
 if "ultralytics" not in sys.modules:

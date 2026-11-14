@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="fr" data-theme="dark"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NiifYéén — Autorités</title>
+<script>
+  try { var t = JSON.parse(localStorage.getItem("niifyeen.theme")); if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); } catch (e) {}
+</script>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="app-body">
+<div class="app">
+  <aside id="sidebar" class="sidebar"></aside>
+  <main class="page">
+    <header class="toolbar">
+      <h1>Autorités</h1>
+      <div class="chips"><span class="chip" id="chipMode"></span></div>
+      <span class="toolbar-spacer"></span>
+      <label class="check"><input type="checkbox" id="scope"> <span>Prévenir l'autorité la plus proche</span></label>
+      <button class="btn primary" id="btnAdd" type="button">Ajouter une autorité</button>
+    </header>
+
+    <div class="page-body">
+      <section class="card">
+        <p class="muted" id="modeNote"></p>
+        <div class="table-wrap">
+          <table class="data">
+            <thead><tr>
+              <th scope="col">Autorité</th><th scope="col">Téléphone</th><th scope="col">Caméras rattachées</th>
+              <th scope="col">Position</th><th scope="col">Canal</th><th scope="col">Boîte de réception (lien secret)</th><th scope="col">Actions</th>
+            </tr></thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+        <p class="muted" id="emptyMsg" hidden>Aucune autorité. Cliquez sur « Ajouter une autorité ».</p>
+        <label class="check"><input type="checkbox" id="lanToggle"> <span>Ouvrir la boîte de réception aux téléphones du réseau local</span></label>
+        <p class="muted" id="lanNote"></p>
+        <p class="muted">Pour chaque caméra, l'autorité à prévenir est celle qui lui est rattachée ; à défaut, la plus proche sur la carte
+          (si l'autorité et la caméra ont une position). Un même couple cible/caméra ne déclenche pas plus d'un envoi par délai minimal.
+          Les empreintes faciales ne sont jamais envoyées.</p>
+      </section>
+
+      <section class="card">
+        <h2>Journal des envois</h2>
+        <div class="table-wrap">
+          <table class="data">
+            <thead><tr><th scope="col">Heure</th><th scope="col">Autorité</th><th scope="col">Cible</th><th scope="col">Caméra</th>
+              <th scope="col">Canal</th><th scope="col">Statut</th><th scope="col">Message</th></tr></thead>
+            <tbody id="logRows"></tbody>
+          </table>
+        </div>
+        <p class="muted" id="logEmpty" hidden>Aucun envoi pour l'instant.</p>
+      </section>
+    </div>
+  </main>
+</div>
+
+<div class="modal" id="modal" hidden>
+  <form class="modal-card" id="form" role="dialog" aria-modal="true" aria-labelledby="modalTitle" novalidate>
+    <div class="modal-head"><h2 id="modalTitle">Ajouter une autorité</h2><button type="button" class="btn small" id="btnClose" aria-label="Fermer">✕</button></div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="field" data-f="name"><label for="fName">Nom *</label><input id="fName" maxlength="80" autocomplete="off"><span class="error"></span></div>
+        <div class="field" data-f="service"><label for="fService">Service</label><input id="fService" maxlength="80" autocomplete="off" placeholder="Commissariat, gendarmerie…"><span class="error"></span></div>
+        <div class="field" data-f="phone"><label for="fPhone">Téléphone</label><input id="fPhone" maxlength="30" autocomplete="off" placeholder="+226 …"><span class="error"></span></div>
+        <div class="field" data-f="telegram_chat_id"><label for="fChat">Identifiant Telegram (facultatif, service externe)</label><input id="fChat" maxlength="40" autocomplete="off" inputmode="numeric"><span class="hint">Laissez vide pour rester en interne : l'autorité lit les alertes dans sa boîte de réception.</span><span class="error"></span></div>
+        <div class="field" data-f="x"><label for="fX">Position sur la carte : horizontale (0 à 1)</label><input id="fX" type="number" min="0" max="1" step="0.01"><span class="error"></span></div>
+        <div class="field" data-f="y"><label for="fY">Position sur la carte : verticale (0 à 1)</label><input id="fY" type="number" min="0" max="1" step="0.01"><span class="error"></span></div>
+        <fieldset class="field wide" data-f="cameras"><legend>Caméras rattachées</legend><div id="camBoxes" class="check-list"></div><span class="error"></span></fieldset>
+        <div class="field"><label for="fEnabled">État</label><select id="fEnabled"><option value="1">Active</option><option value="0">Désactivée</option></select></div>
+      </div>
+      <p class="error" id="formError" role="alert" hidden></p>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn" id="btnCancel">Annuler</button>
+      <button type="submit" class="btn primary" id="btnSave">Enregistrer</button>
+    </div>
+  </form>
+</div>
+
+<script src="/static/shell.js"></script>
+<script src="/static/authorities.js"></script>
+</body></html>

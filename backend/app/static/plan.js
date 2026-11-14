@@ -1,7 +1,7 @@
 /*
  * Plan du site : caméras, caméras où les cibles sont identifiées, et trajectoires.
  *
- * Dessine par-dessus site-plan.svg (même repère 900 x 510). Les positions viennent de
+ * Dessine par-dessus un fond neutre (blank-plan.svg) (même repère 900 x 510). Les positions viennent de
  * `camera_meta` (x et y sont des fractions de la largeur / hauteur du plan).
  * Plusieurs cibles peuvent être affichées en même temps, chacune dans sa couleur.
  * Tout le texte est inséré avec textContent : aucune donnée n'est interprétée comme du HTML.
@@ -268,8 +268,8 @@
   function reset() { lastSignature = null; }
 
   /**
-   * Remplace le plan illustratif par le plan réel d'un étage (page Carte / import) : l'image est affichée et le
-   * calque de caméras prend ses dimensions. Sans étage, le plan illustratif reste en place. Renvoie une promesse.
+   * Remplace le fond neutre par le plan réel d'un étage (page Carte / import) : l'image est affichée et le
+   * calque de caméras prend ses dimensions. Sans étage, le fond neutre reste en place. Renvoie une promesse.
    */
   function loadBase(img, svg, fetchFn) {
     fetchFn = fetchFn || (root.fetch ? root.fetch.bind(root) : null);

@@ -1,3 +1,4 @@
+import json
 import asyncio
 import base64
 import logging
@@ -16,10 +17,10 @@ from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, Res
 from fastapi.staticfiles import StaticFiles
 
 from . import config
-from .db import (init_db, SessionLocal, Participant, EmbeddingRef, Detection,
+from .db import (Authority, Dispatch, init_db, SessionLocal, Participant, EmbeddingRef, Detection,
                  utcnow, to_iso_utc, delete_participant, save_target_move, Event)
 from .people import PersonError
-from . import alerts, camera_probe, events, floors, history, people, supervision, target_profile, target_sessions
+from . import alerts, camera_probe, dispatch, events, inbox, floors, history, people, supervision, target_profile, target_sessions
 from .camera_manager import CameraManager, CameraError, normalize_source, source_kind
 from .db_logger import DBLogger
 from .supervision import SupervisionMonitor
@@ -157,10 +158,25 @@ async def lifespan(app: FastAPI):
     app.state.monitor.start()
     app.state.alerts = alerts.AlertCenter(app.state.feed, lambda: app.state.camera_meta)
     app.state.alerts.start()
+    app.state.dispatcher = dispatch.Dispatcher(lambda: app.state.camera_meta, app.state.targets.get,
+                                                 lambda cid: getattr(app.state.cams.get(cid), "latest_jpeg", None),
+                                                 lambda cid, tid: (lambda c: c.target_crop(tid, max_age_sec=3.0) if c is not None else None)(app.state.cams.get(cid)))
+    app.state.dispatcher.start(app.state.feed)
+    _db = SessionLocal()
+    try:
+        dispatch.ensure_tokens(_db)
+        inbox.set_lan(dispatch.lan_enabled(_db))
+    finally:
+        _db.close()
+    app.state.inbox = inbox.InboxServer(lambda: app.state.camera_meta)
+    if app.state.inbox.start():
+        print(f"[MAIN] Boîte de réception des autorités : {inbox.public_base()}/a/<lien de l'autorité>")
     print(f"[MAIN] Caméras démarrées: {list(app.state.cams.keys())}")
     try:
         yield
     finally:
+        app.state.inbox.stop()
+        app.state.dispatcher.stop()
         app.state.alerts.stop()
         app.state.monitor.stop()
         app.state.logger.stop()
@@ -208,6 +224,11 @@ def page_people(participant_id: Optional[int] = None):
 @app.get("/admin/cameras", response_class=HTMLResponse)
 def page_cameras_admin():
     return (BASE_DIR / "static" / "cameras-admin.html").read_text(encoding="utf-8")
+
+
+@app.get("/authorities", response_class=HTMLResponse)
+def page_authorities():
+    return (BASE_DIR / "static" / "authorities.html").read_text(encoding="utf-8")
 
 
 @app.get("/alerts", response_class=HTMLResponse)
@@ -458,6 +479,10 @@ def list_events(limit: int = Query(50, ge=1, le=200), after_id: int = Query(None
 
 @app.get("/api/cameras")
 def api_cameras():
+    try:
+        app.state.camera_manager.refresh_meta()      # noms/positions modifiés directement dans la base
+    except Exception:
+        pass
     return {"cameras": list(app.state.cams.keys()), "camera_meta": app.state.camera_meta}
 
 
@@ -750,6 +775,168 @@ def api_alert_scope_save(body: AlertScopeIn):
     return {"targets_only": value}
 
 
+class AuthorityIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: Optional[str] = None
+    service: Optional[str] = None
+    phone: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
+    cameras: Optional[List[str]] = None
+    x: Optional[float] = None
+    y: Optional[float] = None
+    enabled: Optional[bool] = None
+
+
+class DispatchScopeIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool
+
+
+def _authority_out(a: Authority) -> dict:
+    """Autorité telle que l'affiche la page d'administration locale : le lien secret de sa boîte de réception, jamais le jeton seul."""
+    view = dispatch.authority_view(a)
+    token = view.pop("inbox_token", None)
+    view["inbox_url"] = f"{inbox.public_base()}/a/{token}" if token else None
+    return view
+
+
+def _dispatch_error(exc: "dispatch.DispatchError"):
+    return HTTPException(exc.status, {"message": exc.message, "field": exc.field})
+
+
+@app.get("/api/authorities")
+def api_authorities():
+    db = SessionLocal()
+    try:
+        dispatch.ensure_tokens(db)
+        return {"authorities": [_authority_out(a) for a in db.query(Authority).order_by(Authority.id).all()],
+                "enabled": dispatch.is_enabled(db), "telegram_configured": dispatch.telegram_ready(),
+                "inbox": {"enabled": config.INBOX_ENABLED, "port": config.INBOX_PORT,
+                          "lan_forced": config.INBOX_HOST not in ("127.0.0.1", "localhost", "::1"),
+                          "lan_open": inbox.lan_open(), "host": inbox.current_host(),
+                          "lan_ip": (inbox.lan_addresses() or [None])[0], "lan_ips": inbox.lan_addresses()},
+                "cooldown_sec": dispatch.COOLDOWN_SEC,
+                "cameras": [{"id": k, "label": v.get("label") or k} for k, v in getattr(app.state, "camera_meta", {}).items()]}
+    finally:
+        db.close()
+
+
+@app.put("/api/inbox-lan")
+def api_inbox_lan(body: DispatchScopeIn):
+    """Ouvre (ou ferme) la boîte de réception aux téléphones du réseau local, sans variable d'environnement."""
+    db = SessionLocal()
+    try:
+        dispatch.set_lan_enabled(db, body.enabled)
+    finally:
+        db.close()
+    inbox.set_lan(body.enabled)
+    srv = getattr(app.state, "inbox", None)
+    restarted = srv.restart() if srv is not None else False
+    return {"lan_open": inbox.lan_open(), "restarted": restarted, "base": inbox.public_base()}
+
+
+@app.put("/api/authorities-scope")
+def api_authorities_scope(body: DispatchScopeIn):
+    db = SessionLocal()
+    try:
+        return {"enabled": dispatch.set_enabled(db, body.enabled)}
+    finally:
+        db.close()
+
+
+@app.post("/api/authorities", status_code=201)
+def api_authority_create(body: AuthorityIn):
+    db = SessionLocal()
+    try:
+        try:
+            data = dispatch.clean_authority(body.model_dump(exclude_unset=True))
+        except dispatch.DispatchError as exc:
+            raise _dispatch_error(exc)
+        cams = data.pop("cameras", [])
+        row = Authority(cameras=json.dumps(cams), inbox_token=dispatch.new_token(), **data)
+        db.add(row)
+        db.commit()
+        return _authority_out(row)
+    finally:
+        db.close()
+
+
+@app.put("/api/authorities/{authority_id}")
+def api_authority_update(authority_id: int, body: AuthorityIn):
+    db = SessionLocal()
+    try:
+        row = db.get(Authority, authority_id)
+        if row is None:
+            raise HTTPException(404, {"message": "Autorité introuvable.", "field": None})
+        try:
+            data = dispatch.clean_authority(body.model_dump(exclude_unset=True), partial=True)
+        except dispatch.DispatchError as exc:
+            raise _dispatch_error(exc)
+        if "cameras" in data:
+            row.cameras = json.dumps(data.pop("cameras"))
+        for key, value in data.items():
+            setattr(row, key, value)
+        db.commit()
+        return _authority_out(row)
+    finally:
+        db.close()
+
+
+@app.delete("/api/authorities/{authority_id}")
+def api_authority_delete(authority_id: int):
+    db = SessionLocal()
+    try:
+        row = db.get(Authority, authority_id)
+        if row is None:
+            raise HTTPException(404, {"message": "Autorité introuvable.", "field": None})
+        db.delete(row)
+        db.commit()
+        return {"ok": True}
+    finally:
+        db.close()
+
+
+@app.post("/api/authorities/{authority_id}/inbox-token")
+def api_authority_new_link(authority_id: int):
+    """Régénère le lien secret : l'ancien cesse de fonctionner immédiatement (lien perdu ou partagé par erreur)."""
+    db = SessionLocal()
+    try:
+        row = db.get(Authority, authority_id)
+        if row is None:
+            raise HTTPException(404, {"message": "Autorité introuvable.", "field": None})
+        row.inbox_token = dispatch.new_token()
+        db.commit()
+        return _authority_out(row)
+    finally:
+        db.close()
+
+
+@app.post("/api/authorities/{authority_id}/test")
+def api_authority_test(authority_id: int):
+    """Message d'essai (sans donnée sur une personne) : réel si Telegram est configuré, sinon simulé et journalisé."""
+    db = SessionLocal()
+    try:
+        row = db.get(Authority, authority_id)
+        if row is None:
+            raise HTTPException(404, {"message": "Autorité introuvable.", "field": None})
+        view = dispatch.authority_view(row)
+        text = "[NiifYéén] Message d'essai : aucune cible, aucune donnée personnelle."
+        channel, status = dispatch.send_to_authority(view, text)
+        return dispatch.log_dispatch(db, view, channel, status, text, None, "essai")
+    finally:
+        db.close()
+
+
+@app.get("/api/dispatches")
+def api_dispatches(limit: int = Query(50, ge=1, le=200)):
+    db = SessionLocal()
+    try:
+        rows = db.query(Dispatch).order_by(Dispatch.id.desc()).limit(limit).all()
+        return {"dispatches": [dispatch.dispatch_view(d) for d in rows]}
+    finally:
+        db.close()
+
+
 @app.put("/api/alerts/rules")
 def api_alert_rules_save(body: AlertRulesIn):
     db = SessionLocal()
@@ -838,7 +1025,7 @@ def api_floors():
     db = SessionLocal()
     try:
         return {"floors": floors.list_floors(db), "max": floors.MAX_FLOORS,
-                "default_plan": "/static/site-plan.svg", "default_size": list(floors.SVG_DEFAULT)}
+                "default_plan": "/static/blank-plan.svg", "default_size": list(floors.SVG_DEFAULT)}
     finally:
         db.close()
 

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="fr"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#b71c1c">
+<title>NiifYéén — Réception</title>
+<link rel="stylesheet" href="/static/inbox.css">
+</head>
+<body>
+<header class="top">
+  <div class="who"><h1 id="who">Réception des alertes</h1><p id="service" class="sub"></p></div>
+  <div class="live" id="live" role="status"><span class="dot" aria-hidden="true"></span><span id="state">Connexion…</span></div>
+</header>
+<div class="bar">
+  <div class="tabs" role="tablist" aria-label="Filtre">
+    <button type="button" role="tab" id="tabTodo" aria-selected="true">À traiter <b id="nTodo">0</b></button>
+    <button type="button" role="tab" id="tabAll" aria-selected="false">Toutes <b id="nAll">0</b></button>
+  </div>
+  <div class="soundctl"><button type="button" class="ghost" id="sound" aria-pressed="false">Son : non</button>
+    <button type="button" class="ghost" id="soundTest">Tester</button>
+    <button type="button" class="ghost" id="clearAll">Tout supprimer</button></div>
+</div>
+<button type="button" class="soundbanner" id="soundBanner" hidden>🔔 Touchez ici pour activer le son des alertes</button>
+<div class="flash" id="flash" role="alert" hidden>Nouvelle alerte</div>
+<main id="list"></main>
+<p id="empty" class="empty" hidden></p>
+<div class="lightbox" id="lightbox" hidden role="dialog" aria-modal="true" aria-label="Photo en grand">
+  <button type="button" class="close" id="lbClose" aria-label="Fermer">✕</button>
+  <figure><img id="lbImg" alt=""><figcaption id="lbCap"></figcaption></figure>
+</div>
+<script src="/static/inbox.js"></script>
+</body></html>

@@ -124,7 +124,7 @@ class MultiTargetRecognitionTests(unittest.TestCase):
         it = iter(faces)
         def fake_detect(frame):
             emb = next(it)
-            return [SimpleNamespace(bbox=[0, 0, 10, 10], normed_embedding=unit(*emb))]
+            return [SimpleNamespace(bbox=[0, 0, 64, 64], det_score=0.9, normed_embedding=unit(*emb))]
         self.patch = mock.patch.object(pp, "detect_faces_safe", fake_detect)
         self.patch.start()
         self.addCleanup(self.patch.stop)
@@ -172,6 +172,54 @@ class MultiTargetRecognitionTests(unittest.TestCase):
         by_track = {e["track_id"]: e for e in cam.latest_events}
         self.assertEqual(by_track[1]["target_id"], 1)
         self.assertEqual((by_track[2]["mode"], by_track[2]["target_id"]), ("UNK", None))
+
+    def test_close_up_of_each_target_is_kept_for_the_alert(self):
+        cam = self.make([(1, 0, 0), (0, 1, 0)])
+        cam.set_targets([target(1, (1, 0, 0)), target(2, (0, 1, 0))])
+        cam._process_frame(self.FRAME)
+        for tid in (1, 2):
+            jpg = cam.target_crop(tid)
+            self.assertTrue(jpg and jpg[:2] == b"\xff\xd8", tid)         # un vrai JPEG
+        self.assertIsNone(cam.target_crop(99))
+        cam.latest_target_crops[1] = (time.time() - 60, cam.latest_target_crops[1][1])
+        self.assertIsNone(cam.target_crop(1))                           # trop ancien : pas d'image périmée
+
+    def test_unknown_person_has_no_close_up(self):
+        cam = self.make([(0, 0, 1), (0, 0, 1)])
+        cam.set_targets([target(1, (1, 0, 0))])
+        cam._process_frame(self.FRAME)
+        self.assertEqual(cam.latest_target_crops, {})
+
+    def test_visible_face_that_contradicts_the_identity_removes_it(self):
+        """Échange de piste : l'identité reportée ne doit pas survivre à un visage net qui ne correspond à personne."""
+        cam = self.make([(1, 0, 0), (0, 1, 0)] + [(0, 0, 1)] * 4)     # deux personnes par image
+        cam.set_targets([target(1, (1, 0, 0))])
+        cam._process_frame(self.FRAME)
+        self.assertEqual([e["mode"] for e in cam.latest_events if e["track_id"] == 1], ["TARGET"])
+        # images suivantes (piste 1) : un inconnu net — conservé après une contradiction, retiré à la seconde
+        modes = []
+        for _ in range(2):
+            cam._process_frame(self.FRAME)
+            modes.append([e["mode"] for e in cam.latest_events if e["track_id"] == 1][0])
+        self.assertEqual(modes, ["TARGET", "UNK"])
+
+    def test_tiny_or_blurry_faces_are_ignored(self):
+        tiny = SimpleNamespace(bbox=[0, 0, 10, 10], det_score=0.9)
+        blurry = SimpleNamespace(bbox=[0, 0, 80, 80], det_score=0.2)
+        good = SimpleNamespace(bbox=[0, 0, 80, 80], det_score=0.9)
+        self.assertFalse(pp.PersonPipeline._usable_face(tiny))
+        self.assertFalse(pp.PersonPipeline._usable_face(blurry))
+        self.assertTrue(pp.PersonPipeline._usable_face(good))
+
+    def test_identity_survives_when_no_usable_face_is_visible(self):
+        """Visage absent ou minuscule : l'identité suivie est conservée (ce n'est pas une contradiction)."""
+        cam = self.make([(1, 0, 0), (0, 0, 1)])
+        cam.set_targets([target(1, (1, 0, 0))])
+        cam._process_frame(self.FRAME)
+        pp.detect_faces_safe = lambda frame: [SimpleNamespace(bbox=[0, 0, 10, 10], det_score=0.9, normed_embedding=unit(0, 0, 1))]
+        for _ in range(3):
+            cam._process_frame(self.FRAME)
+        self.assertEqual([e["mode"] for e in cam.latest_events if e["track_id"] == 1], ["TARGET"])
 
     def test_no_targets_means_no_target_events(self):
         cam = self.make([(1, 0, 0), (0, 1, 0)])
@@ -347,7 +395,7 @@ class RecognitionStatusTests(unittest.TestCase):
         cam.set_known(known)
         it = iter(faces)
         patch = mock.patch.object(pp, "detect_faces_safe", lambda f: [SimpleNamespace(
-            bbox=[0, 0, 10, 10], normed_embedding=np.asarray(next(it), dtype=np.float32))])
+            bbox=[0, 0, 64, 64], det_score=0.9, normed_embedding=np.asarray(next(it), dtype=np.float32))])
         patch.start()
         self.addCleanup(patch.stop)
         return cam
@@ -444,7 +492,7 @@ class RecognitionStatusTests(unittest.TestCase):
             cam.set_known([person(7, "Awa", 0)])
             faces = iter([vec_cos(0.8), second_face])
             with mock.patch.object(pp, "detect_faces_safe", lambda f: [SimpleNamespace(
-                    bbox=[0, 0, 10, 10], normed_embedding=np.asarray(next(faces), dtype=np.float32))]):
+                    bbox=[0, 0, 64, 64], det_score=0.9, normed_embedding=np.asarray(next(faces), dtype=np.float32))]):
                 cam._process_frame(np.zeros((360, 640, 3), dtype=np.uint8))
             img = cv2.imdecode(np.frombuffer(cam.latest_jpeg, dtype=np.uint8), cv2.IMREAD_COLOR).astype(int)
             near = lambda bgr: int((np.abs(img - np.array(bgr)).sum(axis=2) < 70).sum())

@@ -312,6 +312,18 @@ class UpdateTests(ManagerBase):
         self.assertIn("panne", self.cams)
 
 
+class RefreshMetaTests(ManagerBase):
+    def test_labels_changed_outside_the_app_are_picked_up(self):
+        self.seed()
+        s = SessionLocal()
+        s.get(Camera, "entre").label = "Centre-ville"
+        s.commit(); s.close()
+        self.assertEqual(self.meta["entre"]["label"], "Entrée")
+        self.manager.refresh_meta()
+        self.assertEqual(self.meta["entre"]["label"], "Centre-ville")
+        self.assertEqual(set(self.cams), {"entre", "salle"})      # les flux ne sont pas touchés
+
+
 class DeleteRestartTests(ManagerBase):
     def setUp(self):
         super().setUp()

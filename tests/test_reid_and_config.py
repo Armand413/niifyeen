@@ -127,4 +127,5 @@ class IdentityHoldConfigTest(unittest.TestCase):
         finally:
             os.environ.pop("NIIFYEEN_IDENTITY_HOLD_SEC", None)
             importlib.reload(config)
-        self.assertEqual(config.IDENTITY_HOLD_SEC, 20.0)
+        self.assertEqual(config.IDENTITY_HOLD_SEC, 10.0)
+        self.assertEqual((config.FACE_MIN_SIZE_PX, config.FACE_MIN_DET_SCORE, config.IDENTITY_CONTRADICTIONS), (32, 0.5, 2))

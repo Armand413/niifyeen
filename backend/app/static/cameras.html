@@ -65,8 +65,8 @@
           <p id="planStatus" class="plan-status is-idle" role="status" aria-live="polite">Aucune cible repérée pour l'instant.</p>
           <figure>
             <div class="plan-stage">
-              <img id="planImg" src="/static/site-plan.svg" width="900" height="510"
-                   alt="Plan illustratif du site : accueil à gauche, salle centrale, locaux à droite et couloir.">
+              <img id="planImg" src="/static/blank-plan.svg" width="900" height="510"
+                   alt="Carte de la ville avec la position des caméras">
               <svg id="planOverlay" class="plan-overlay" viewBox="0 0 900 510" aria-hidden="true" focusable="false"></svg>
             </div>
             <figcaption>
@@ -173,7 +173,7 @@
     try{ SitePlan.render(planOverlay, planStatus, cameraMeta, targets); }
     catch(e){ console.error("Plan : affichage impossible", e); }
   }
-  SitePlan.loadBase(planImg, planOverlay).then(renderPlan);      // carte réelle (étage importé) au lieu du plan illustratif
+  SitePlan.loadBase(planImg, planOverlay).then(renderPlan);      // carte réelle (étage importé) au lieu d'un fond vide
 
   // Liste des cibles (photo, fiche) : rechargée seulement quand une cible est ajoutée ou retirée.
   const targetsBox = document.getElementById("targetsBox");

@@ -195,11 +195,12 @@ class StaticPagesTests(unittest.TestCase):
         for token in ("var(--surface)", "var(--border)", "var(--text)", "var(--accent)"):
             self.assertIn(token, css)
 
-    def test_base_plan_has_no_baked_in_cameras(self):
-        """Les caméras sont dessinées par la page à partir de cameras.json : une seule source de vérité."""
-        svg = (STATIC / "site-plan.svg").read_text(encoding="utf-8")
-        self.assertNotIn('href="#camera"', svg)
-        self.assertNotIn("ENTRÉE", svg)
+    def test_building_plan_is_gone(self):
+        """Le plan du bâtiment est supprimé : aucune page ni script ne doit plus le référencer."""
+        self.assertFalse((STATIC / "site-plan.svg").exists())
+        for p in STATIC.iterdir():
+            if p.suffix in (".html", ".js", ".css"):
+                self.assertNotIn("site-plan.svg", p.read_text(encoding="utf-8"), p.name)
 
 
 if __name__ == "__main__":

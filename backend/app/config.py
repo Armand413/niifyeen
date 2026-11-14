@@ -51,9 +51,22 @@ YOLO_WEIGHTS = str(_local_weights) if _local_weights.exists() else "yolov8n.pt"
 # des données réelles avant de s'y fier.
 DB_THRESHOLD = _env_float("NIIFYEEN_DB_THRESHOLD", 0.35)          # personne enrôlée : en dessous, « inconnu »
 TARGET_THRESHOLD = _env_float("NIIFYEEN_TARGET_THRESHOLD", 0.40)  # cible recherchée
+# Boîte de réception interne des autorités : second petit serveur, limité aux pages de réception.
+# Par défaut il n'écoute que sur cet ordinateur ; pour l'ouvrir aux appareils du réseau local : NIIFYEEN_INBOX_HOST=0.0.0.0.
+INBOX_ENABLED = os.getenv("NIIFYEEN_INBOX_ENABLED", "1").strip().lower() not in ("0", "false", "non", "no")
+INBOX_HOST = os.getenv("NIIFYEEN_INBOX_HOST", "127.0.0.1").strip() or "127.0.0.1"
+INBOX_PORT = max(1024, min(65535, _env_int("NIIFYEEN_INBOX_PORT", 8090)))
 # Durée pendant laquelle une identité reconnue (cible ou personne enrôlée) est conservée tant que la même silhouette est
 # suivie, même si le visage n'est plus visible (de dos, de profil, tête baissée). Au-delà, il faut revoir le visage.
-IDENTITY_HOLD_SEC = max(1.0, min(300.0, _env_float("NIIFYEEN_IDENTITY_HOLD_SEC", 20.0)))
+# Un visage visible qui ne correspond plus à l'identité reportée la supprime aussitôt (voir person_pipeline). Une durée longue
+# augmente le risque d'hériter de l'identité de quelqu'un d'autre après un échange de piste (croisement, occlusion).
+IDENTITY_HOLD_SEC = max(1.0, min(300.0, _env_float("NIIFYEEN_IDENTITY_HOLD_SEC", 10.0)))
+# Qualité minimale d'un visage pour être comparé : un visage minuscule ou flou donne une empreinte bruitée, donc de fausses
+# correspondances. Sous ces seuils le visage est ignoré (ni reconnu, ni utilisé pour contredire une identité).
+FACE_MIN_SIZE_PX = _env_int("NIIFYEEN_FACE_MIN_SIZE_PX", 32)
+FACE_MIN_DET_SCORE = _env_float("NIIFYEEN_FACE_MIN_DET_SCORE", 0.5)
+# Nombre de visages nets consécutifs qui contredisent l'identité reportée avant de la retirer.
+IDENTITY_CONTRADICTIONS = max(1, _env_int("NIIFYEEN_IDENTITY_CONTRADICTIONS", 2))
 REID_THRESHOLD = _env_float("NIIFYEEN_REID_THRESHOLD", 0.45)      # même personne entre caméras
 
 # Statuts de correspondance avec une personne enrôlée. Une similarité n'est jamais une identité certaine :

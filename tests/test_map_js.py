@@ -56,7 +56,7 @@ class MapLogicTests(unittest.TestCase):
         self.assertEqual(s[5], {"width": 900, "height": 510})
 
     def test_only_our_own_image_routes_are_accepted(self):
-        self.assertEqual(self.out["image"], ["/api/floors/3/image"] + ["/static/site-plan.svg"] * 5)
+        self.assertEqual(self.out["image"], ["/api/floors/3/image"] + ["/static/blank-plan.svg"] * 5)
 
     def test_cameras_are_filtered_by_floor(self):
         self.assertEqual(self.out["on1"], ["a"])

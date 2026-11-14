@@ -111,6 +111,7 @@
   var NAV = [
     { href: "/supervision", icon: "monitor", label: "Supervision", key: "supervision" },
     { href: "/alerts", icon: "bell", label: "Alertes", key: "alerts" },
+    { href: "/authorities", icon: "users", label: "Autorités", key: "authorities" },
     { href: "/people", icon: "users", label: "Personnes", key: "people" },
     { href: "/map", icon: "route", label: "Carte", key: "map" },
     { href: "/admin/cameras", icon: "camera", label: "Gestion des caméras", key: "admin-cameras" },

@@ -101,7 +101,7 @@ class FloorApiTests(_api.ApiTests):
     def test_no_floor_by_default(self):
         j = self.client.get("/api/floors").json()
         self.assertEqual(j["floors"], [])
-        self.assertEqual(j["default_plan"], "/static/site-plan.svg")
+        self.assertEqual(j["default_plan"], "/static/blank-plan.svg")
 
     def test_create_list_and_serve_image(self):
         r = self.add_floor()

@@ -252,6 +252,38 @@ class Recording(Base):
     status = Column(String, nullable=False, default="recording")    # recording | done | error
 
 
+class Authority(Base):
+    """Autorité (poste de police, gendarmerie, etc.) qui reçoit sur son téléphone les alertes de cible des caméras proches."""
+    __tablename__ = "authorities"
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    service = Column(String, nullable=True)               # ex. « Commissariat central »
+    phone = Column(String, nullable=True)                 # numéro à contacter (affiché, non utilisé pour un envoi automatique)
+    telegram_chat_id = Column(String, nullable=True)      # destinataire de l'envoi réel sur téléphone (Telegram)
+    cameras = Column(Text, nullable=True)                 # JSON : identifiants de caméras rattachées (prioritaire sur la distance)
+    x = Column(Float, nullable=True)                      # position sur la carte (0-1) : sert au calcul de « la plus proche »
+    y = Column(Float, nullable=True)
+    enabled = Column(Boolean, nullable=False, default=True)
+    inbox_token = Column(String, nullable=True, index=True)   # secret du lien d'accès à la boîte de réception interne
+    created_at = Column(DateTime, default=utcnow)
+
+
+class Dispatch(Base):
+    """Journal des envois aux autorités : qui a reçu quoi, quand, et si l'envoi est réel ou simulé."""
+    __tablename__ = "dispatches"
+    id = Column(Integer, primary_key=True)
+    created_at = Column(DateTime, default=utcnow, index=True)
+    event_id = Column(Integer, nullable=True)
+    target_label = Column(String, nullable=True)
+    camera_id = Column(String, nullable=True)
+    authority_id = Column(Integer, nullable=True, index=True)
+    authority_name = Column(String, nullable=True)
+    channel = Column(String, nullable=False)              # telegram | simulation
+    status = Column(String, nullable=False)               # envoyé | simulé | échec ...
+    message = Column(Text, nullable=True)                 # texte exact transmis
+    hidden = Column(Integer, default=0)                   # 1 = supprimé de la boîte de l'autorité (le journal le garde)
+
+
 class Setting(Base):
     """Réglages persistants de l'application (clé / valeur)."""
     __tablename__ = "settings"
@@ -274,6 +306,8 @@ _ADDED_COLUMNS = {
     },
     "target_moves": {"label": "VARCHAR"},
     "zones": {"max_dwell_sec": "INTEGER"},
+    "authorities": {"inbox_token": "VARCHAR"},
+    "dispatches": {"hidden": "INTEGER DEFAULT 0"},
     "cameras": {"floor_id": "INTEGER", "heading": "FLOAT", "fov": "FLOAT", "view_range": "FLOAT"},
 }
 

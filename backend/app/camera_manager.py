@@ -304,6 +304,18 @@ class CameraManager:
         self.cams[row.id] = cam
         return True
 
+    def refresh_meta(self):
+        """Relit noms, emplacements et position sur la carte depuis la base (modifiés hors de l'application).
+        Ne touche ni aux flux ni aux sources : seuls les libellés affichés sont mis à jour."""
+        with self._lock:
+            rows = [r for r in self._load_rows() if r.enabled and r.id in self.cams]
+            new_meta = config.camera_meta([{"id": r.id, "label": r.label, "location": r.location, "x": r.x, "y": r.y,
+                                            "floor_id": r.floor_id, "heading": r.heading, "fov": r.fov,
+                                            "view_range": r.view_range} for r in rows])
+            for key in [k for k in self.meta if k not in new_meta]:
+                del self.meta[key]
+            self.meta.update(new_meta)
+
     def _stop(self, camera_id: str):
         cam = self.cams.pop(camera_id, None)
         if cam is not None:

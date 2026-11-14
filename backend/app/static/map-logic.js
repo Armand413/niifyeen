@@ -7,7 +7,7 @@
 
   var BASE_W = 900, MIN_H = 300, MAX_H = 1800;
   var IMAGE_URL = /^\/api\/floors\/[0-9]+\/image$/;
-  var DEFAULT_PLAN = "/static/site-plan.svg";
+  var DEFAULT_PLAN = "/static/blank-plan.svg";
 
   /** Taille du repère (largeur fixe à 900) pour un plan de proportions w:h. */
   function planSize(width, height) {
